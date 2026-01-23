@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}控制台 - GPT Team 管理系统{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>控制台</h2>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-container">
+    <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.total_teams }}</div>
+            <div class="stat-label">Team 总数</div>
+        </div>
+    </div>
+    <div class="stat-card stat-success">
+        <div class="stat-icon">✅</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.available_teams }}</div>
+            <div class="stat-label">可用 Team</div>
+        </div>
+    </div>
+    <div class="stat-card stat-info">
+        <div class="stat-icon">🎫</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.total_codes }}</div>
+            <div class="stat-label">兑换码总数</div>
+        </div>
+    </div>
+    <div class="stat-card stat-warning">
+        <div class="stat-icon">📝</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.used_codes }}</div>
+            <div class="stat-label">已使用兑换码</div>
+        </div>
+    </div>
+</div>
+
+<!-- Team 列表 -->
+<div class="content-section">
+    <div class="section-header">
+        <h3>Team 列表</h3>
+        <a href="/admin/teams/import" class="btn btn-primary">导入 Team</a>
+    </div>
+
+    {% if teams %}
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>邮箱</th>
+                    <th>Team 名称</th>
+                    <th>成员数</th>
+                    <th>订阅计划</th>
+                    <th>到期时间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for team in teams %}
+                <tr>
+                    <td>{{ team.email }}</td>
+                    <td>{{ team.team_name or '-' }}</td>
+                    <td>
+                        <span class="member-count">
+                            {{ team.current_members }}/{{ team.max_members }}
+                        </span>
+                    </td>
+                    <td>{{ team.subscription_plan or '-' }}</td>
+                    <td>
+                        {% if team.expires_at %}
+                            {{ team.expires_at|format_datetime }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ team.status }}">
+                            {% if team.status == 'active' %}
+                                可用
+                            {% elif team.status == 'full' %}
+                                已满
+                            {% elif team.status == 'expired' %}
+                                已过期
+                            {% else %}
+                                异常
+                            {% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <button onclick="viewMembers({{ team.id }})" class="btn btn-sm btn-info" title="查看成员">
+                                成员
+                            </button>
+                            <button onclick="refreshTeam({{ team.id }})" class="btn btn-sm btn-secondary" title="刷新">
+                                刷新
+                            </button>
+                            <button onclick="deleteTeam({{ team.id }}, '{{ team.email }}')" class="btn btn-sm btn-danger" title="删除">
+                                删除
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>暂无 Team 数据</p>
+        <a href="/admin/teams/import" class="btn btn-primary">立即导入</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function viewMembers(teamId) {
+    window.location.href = `/admin/teams/${teamId}/members`;
+}
+
+async function refreshTeam(teamId) {
+    if (!confirm('确定要刷新此 Team 的信息吗?')) {
+        return;
+    }
+
+    try {
+        showToast('正在刷新...', 'info');
+        const response = await fetch(`/api/teams/${teamId}/refresh`, {
+            method: 'GET'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast('刷新成功', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.error || '刷新失败', 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+}
+
+async function deleteTeam(teamId, email) {
+    if (!confirm(`确定要删除 Team "${email}" 吗?\n\n此操作不可恢复!`)) {
+        return;
+    }
+
+    try {
+        showToast('正在删除...', 'info');
+        const response = await fetch(`/admin/teams/${teamId}/delete`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast('删除成功', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.error || '删除失败', 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+}
+</script>
+{% endblock %}

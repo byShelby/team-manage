@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}兑换码管理 - GPT Team 管理系统{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>兑换码管理</h2>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-container">
+    <div class="stat-card">
+        <div class="stat-icon">🎫</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.total }}</div>
+            <div class="stat-label">兑换码总数</div>
+        </div>
+    </div>
+    <div class="stat-card stat-success">
+        <div class="stat-icon">✅</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.unused }}</div>
+            <div class="stat-label">未使用</div>
+        </div>
+    </div>
+    <div class="stat-card stat-info">
+        <div class="stat-icon">📝</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.used }}</div>
+            <div class="stat-label">已使用</div>
+        </div>
+    </div>
+    <div class="stat-card stat-danger">
+        <div class="stat-icon">⏰</div>
+        <div class="stat-content">
+            <div class="stat-value">{{ stats.expired }}</div>
+            <div class="stat-label">已过期</div>
+        </div>
+    </div>
+</div>
+
+<!-- 操作栏 -->
+<div class="section-header">
+    <div class="filter-buttons">
+        <button onclick="filterByStatus('all')" class="btn btn-sm btn-secondary active" id="filter-all">全部</button>
+        <button onclick="filterByStatus('unused')" class="btn btn-sm btn-success" id="filter-unused">未使用</button>
+        <button onclick="filterByStatus('used')" class="btn btn-sm btn-info" id="filter-used">已使用</button>
+        <button onclick="filterByStatus('expired')" class="btn btn-sm btn-danger" id="filter-expired">已过期</button>
+    </div>
+    <div class="action-buttons">
+        <a href="/admin/codes/generate" class="btn btn-primary">生成兑换码</a>
+        <button onclick="exportCodes()" class="btn btn-secondary">导出兑换码</button>
+    </div>
+</div>
+
+<!-- 兑换码列表 -->
+<div class="content-section">
+    {% if codes %}
+    <div class="table-container">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>兑换码</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>过期时间</th>
+                    <th>使用者邮箱</th>
+                    <th>使用时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="codesTableBody">
+                {% for code in codes %}
+                <tr data-status="{{ code.status }}">
+                    <td><code>{{ code.code }}</code></td>
+                    <td>
+                        {% if code.status == 'unused' %}
+                        <span class="badge badge-success">未使用</span>
+                        {% elif code.status == 'used' %}
+                        <span class="badge badge-info">已使用</span>
+                        {% elif code.status == 'expired' %}
+                        <span class="badge badge-danger">已过期</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ code.created_at }}</td>
+                    <td>{{ code.expires_at if code.expires_at else '永久有效' }}</td>
+                    <td>{{ code.used_by_email if code.used_by_email else '-' }}</td>
+                    <td>{{ code.used_at if code.used_at else '-' }}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <button onclick="copyCode('{{ code.code }}')" class="btn btn-sm btn-secondary" title="复制">
+                                复制
+                            </button>
+                            {% if code.status == 'unused' %}
+                            <button onclick="deleteCode('{{ code.code }}')" class="btn btn-sm btn-danger" title="删除">
+                                删除
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>暂无兑换码数据</p>
+        <a href="/admin/codes/generate" class="btn btn-primary">立即生成</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 当前筛选状态
+let currentFilter = 'all';
+
+// 按状态筛选
+function filterByStatus(status) {
+    currentFilter = status;
+
+    // 更新按钮状态
+    document.querySelectorAll('.filter-buttons .btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.getElementById(`filter-${status}`).classList.add('active');
+
+    // 筛选表格行
+    const rows = document.querySelectorAll('#codesTableBody tr');
+    rows.forEach(row => {
+        const rowStatus = row.getAttribute('data-status');
+        if (status === 'all' || rowStatus === status) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// 删除兑换码
+async function deleteCode(code) {
+    if (!confirm(`确定要删除兑换码 ${code} 吗?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/admin/codes/${encodeURIComponent(code)}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            showToast('删除成功', 'success');
+            // 刷新页面
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(result.error || '删除失败', 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+}
+
+// 复制兑换码
+function copyCode(code) {
+    navigator.clipboard.writeText(code).then(() => {
+        showToast('兑换码已复制到剪贴板', 'success');
+    }).catch(() => {
+        showToast('复制失败', 'error');
+    });
+}
+
+// 导出兑换码
+async function exportCodes() {
+    try {
+        const response = await fetch('/admin/codes/export');
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `redemption_codes_${new Date().getTime()}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('导出成功', 'success');
+        } else {
+            showToast('导出失败', 'error');
+        }
+    } catch (error) {
+        showToast('网络错误', 'error');
+    }
+}
+</script>
+{% endblock %}

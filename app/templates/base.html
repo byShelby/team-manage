@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GPT Team 管理系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    {% if user %}
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="navbar-brand">
+                <h1>GPT Team 管理系统</h1>
+            </div>
+            <div class="navbar-menu">
+                <span class="navbar-user">管理员</span>
+                <button onclick="logout()" class="btn btn-secondary">登出</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <div class="main-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <ul class="sidebar-menu">
+                <li class="menu-item {% if active_page == 'dashboard' %}active{% endif %}">
+                    <a href="/admin">
+                        <span class="menu-icon">📊</span>
+                        <span class="menu-text">控制台</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'teams' %}active{% endif %}">
+                    <a href="/admin/teams/import">
+                        <span class="menu-icon">👥</span>
+                        <span class="menu-text">Team导入</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'codes' %}active{% endif %}">
+                    <a href="/admin/codes">
+                        <span class="menu-icon">🎫</span>
+                        <span class="menu-text">兑换码管理</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'records' %}active{% endif %}">
+                    <a href="/admin/records">
+                        <span class="menu-icon">📝</span>
+                        <span class="menu-text">使用记录</span>
+                    </a>
+                </li>
+                <li class="menu-item {% if active_page == 'settings' %}active{% endif %}">
+                    <a href="/admin/settings">
+                        <span class="menu-icon">⚙️</span>
+                        <span class="menu-text">系统设置</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    {% else %}
+    <!-- 未登录时的内容 -->
+    <div class="auth-container">
+        {% block auth_content %}{% endblock %}
+    </div>
+    {% endif %}
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <p>&copy; 2026 GPT Team 管理系统 v0.1.0</p>
+    </footer>
+
+    <!-- 通用提示框 -->
+    <div id="toast" class="toast"></div>
+
+    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

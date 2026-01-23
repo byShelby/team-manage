@@ -1,0 +1,48 @@
+"""
+应用配置模块
+使用 Pydantic Settings 管理配置
+"""
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+
+
+# 项目根目录
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    """应用配置"""
+
+    # 应用配置
+    app_name: str = "GPT Team 管理系统"
+    app_version: str = "0.1.0"
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+    debug: bool = True
+
+    # 数据库配置
+    database_url: str = f"sqlite+aiosqlite:///{BASE_DIR}/team_manage.db"
+
+    # 安全配置
+    secret_key: str = "your-secret-key-here-change-in-production"
+    admin_password: str = "admin123"
+
+    # 日志配置
+    log_level: str = "INFO"
+
+    # 代理配置
+    proxy: str = ""
+    proxy_enabled: bool = False
+
+    # JWT 配置
+    jwt_verify_signature: bool = False
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
+
+
+# 创建全局配置实例
+settings = Settings()
