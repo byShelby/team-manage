@@ -1065,20 +1065,39 @@ class TeamService:
 
     async def get_all_teams(
         self,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        page: int = 1,
+        per_page: int = 20
     ) -> Dict[str, Any]:
         """
         获取所有 Team 列表 (用于管理员页面)
 
         Args:
             db_session: 数据库会话
+            page: 页码
+            per_page: 每页数量
 
         Returns:
-            结果字典,包含 success, teams, error
+            结果字典,包含 success, teams, total, total_pages, current_page, error
         """
         try:
-            # 查询所有 Team
-            stmt = select(Team).order_by(Team.created_at.desc())
+            # 1. 获取总数
+            count_stmt = select(func.count(Team.id))
+            count_result = await db_session.execute(count_stmt)
+            total = count_result.scalar() or 0
+
+            # 2. 计算分页
+            import math
+            total_pages = math.ceil(total / per_page) if total > 0 else 1
+            if page < 1:
+                page = 1
+            if page > total_pages:
+                page = total_pages
+            
+            offset = (page - 1) * per_page
+
+            # 3. 查询分页数据
+            stmt = select(Team).order_by(Team.created_at.desc()).limit(per_page).offset(offset)
             result = await db_session.execute(stmt)
             teams = result.scalars().all()
 
@@ -1100,11 +1119,14 @@ class TeamService:
                     "created_at": team.created_at.isoformat() if team.created_at else None
                 })
 
-            logger.info(f"获取所有 Team 列表成功: 共 {len(team_list)} 个")
+            logger.info(f"获取所有 Team 列表成功: 第 {page} 页, 共 {len(team_list)} 个 / 总数 {total}")
 
             return {
                 "success": True,
                 "teams": team_list,
+                "total": total,
+                "total_pages": total_pages,
+                "current_page": page,
                 "error": None
             }
 
