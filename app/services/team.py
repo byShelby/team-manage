@@ -1292,13 +1292,19 @@ class TeamService:
                     "error": f"Team ID {team_id} 不存在"
                 }
 
-            # 解密 Access Token
+            # 解密 Token
+            access_token = ""
+            refresh_token = ""
+            session_token = ""
             try:
-                from app.services.encryption import encryption_service
-                access_token = encryption_service.decrypt_token(team.access_token_encrypted)
+                if team.access_token_encrypted:
+                    access_token = encryption_service.decrypt_token(team.access_token_encrypted)
+                if team.refresh_token_encrypted:
+                    refresh_token = encryption_service.decrypt_token(team.refresh_token_encrypted)
+                if team.session_token_encrypted:
+                    session_token = encryption_service.decrypt_token(team.session_token_encrypted)
             except Exception as e:
                 logger.error(f"解密 Team {team_id} Token 失败: {e}")
-                access_token = None
 
             # 构建返回数据
             team_data = {
@@ -1306,6 +1312,9 @@ class TeamService:
                 "email": team.email,
                 "account_id": team.account_id,
                 "access_token": access_token,
+                "refresh_token": refresh_token,
+                "session_token": session_token,
+                "client_id": team.client_id or "",
                 "team_name": team.team_name,
                 "plan_type": team.plan_type,
                 "subscription_plan": team.subscription_plan,
