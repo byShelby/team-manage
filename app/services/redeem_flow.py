@@ -156,19 +156,15 @@ class RedeemFlowService:
         完整的兑换流程 (带事务和并发控制)
         优化版本: 将网络请求移出写事务,避免 SQLite 锁定
         """
-        # 1. 预执行验证 (不加锁)
-        # 确认兑换码基本有效，避免在循环中重复验证相同逻辑
-        validate_result = await self.redemption_service.validate_code(code, db_session)
-        if not validate_result["success"]:
-            return {"success": False, "error": validate_result["error"]}
-        if not validate_result["valid"]:
-            return {"success": False, "error": validate_result["reason"]}
-
         max_retries = 3
         current_target_team_id = team_id
         last_error = "未知错误"
 
-        for attempt in range(max_retries):
+            # 彻底确保会话处于干净状态，防止 "A transaction is already begun" 错误
+            # SELECT 操作会隐式开启事务，导致后续 begin() 报错
+            if db_session.in_transaction():
+                await db_session.rollback()
+                
             # 确保每次尝试都从数据库读取最新数据, 避免 identity map 缓存了上一次尝试修改后的状态
             db_session.expire_all()
             
@@ -177,6 +173,13 @@ class RedeemFlowService:
             try:
                 # --- 阶段 1: 验证并占位 (短事务) ---
                 async with db_session.begin():
+                    # 1. 验证兑换码 (在事务内验证确保原子性)
+                    validate_result = await self.redemption_service.validate_code(code, db_session)
+                    if not validate_result["success"]:
+                        return {"success": False, "error": validate_result["error"]}
+                    if not validate_result["valid"]:
+                        return {"success": False, "error": validate_result["reason"]}
+
                     # 再次验证并锁定 (带锁锁定，防止并发)
                     stmt = select(RedemptionCode).where(RedemptionCode.code == code).with_for_update()
                     result = await db_session.execute(stmt)
@@ -277,6 +280,10 @@ class RedeemFlowService:
 
                 # --- 阶段 3: 最终化 ---
                 if invite_result["success"]:
+                    # 阶段 2 的网络请求中可能涉及查询设置(代理等)，会隐式开启事务
+                    if db_session.in_transaction():
+                        await db_session.rollback()
+                        
                     async with db_session.begin():
                         redemption_record = RedemptionRecord(
                             email=email,
@@ -344,6 +351,10 @@ class RedeemFlowService:
     ):
         """回退兑换占位"""
         try:
+            # 确保会话干净，防止在异常处理路径中再次触发事务冲突
+            if db_session.in_transaction():
+                await db_session.rollback()
+                
             async with db_session.begin():
                 # 回退兑换码状态
                 stmt = select(RedemptionCode).where(RedemptionCode.code == code).with_for_update()
