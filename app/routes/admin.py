@@ -3,7 +3,7 @@
 处理管理员面板的所有页面和操作
 """
 import logging
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
@@ -73,6 +73,12 @@ class TeamUpdateRequest(BaseModel):
 
 class CodeUpdateRequest(BaseModel):
     """兑换码更新请求"""
+    has_warranty: bool = Field(..., description="是否为质保兑换码")
+    warranty_days: Optional[int] = Field(None, description="质保天数")
+
+class BulkCodeUpdateRequest(BaseModel):
+    """批量兑换码更新请求"""
+    codes: List[str] = Field(..., description="兑换码列表")
     has_warranty: bool = Field(..., description="是否为质保兑换码")
     warranty_days: Optional[int] = Field(None, description="质保天数")
 
@@ -834,6 +840,32 @@ async def update_code(
     try:
         result = await redemption_service.update_code(
             code=code,
+            db_session=db,
+            has_warranty=update_data.has_warranty,
+            warranty_days=update_data.warranty_days
+        )
+        if not result["success"]:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content=result
+            )
+        return JSONResponse(content=result)
+    except Exception as e:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": str(e)}
+        )
+
+@router.post("/codes/bulk-update")
+async def bulk_update_codes(
+    update_data: BulkCodeUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """批量更新兑换码信息"""
+    try:
+        result = await redemption_service.bulk_update_codes(
+            codes=update_data.codes,
             db_session=db,
             has_warranty=update_data.has_warranty,
             warranty_days=update_data.warranty_days

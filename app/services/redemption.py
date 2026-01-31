@@ -701,54 +701,61 @@ class RedemptionService:
         has_warranty: Optional[bool] = None,
         warranty_days: Optional[int] = None
     ) -> Dict[str, Any]:
+        """更新兑换码信息"""
+        return await self.bulk_update_codes([code], db_session, has_warranty, warranty_days)
+
+    async def bulk_update_codes(
+        self,
+        codes: List[str],
+        db_session: AsyncSession,
+        has_warranty: Optional[bool] = None,
+        warranty_days: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
-        更新兑换码信息
+        批量更新兑换码信息
 
         Args:
-            code: 兑换码
+            codes: 兑换码列表
             db_session: 数据库会话
             has_warranty: 是否为质保兑换码 (可选)
+            warranty_days: 质保天数 (可选)
 
         Returns:
-            结果字典,包含 success, message, error
+            结果字典
         """
         try:
-            # 查询兑换码
-            stmt = select(RedemptionCode).where(RedemptionCode.code == code)
-            result = await db_session.execute(stmt)
-            redemption_code = result.scalar_one_or_none()
+            if not codes:
+                return {"success": True, "message": "没有需要更新的兑换码"}
 
-            if not redemption_code:
-                return {
-                    "success": False,
-                    "message": None,
-                    "error": f"兑换码 {code} 不存在"
-                }
-
-            # 更新质保状态
+            # 构建更新语句
+            values = {}
             if has_warranty is not None:
-                redemption_code.has_warranty = has_warranty
-            
+                values[RedemptionCode.has_warranty] = has_warranty
             if warranty_days is not None:
-                redemption_code.warranty_days = warranty_days
+                values[RedemptionCode.warranty_days] = warranty_days
 
+            if not values:
+                return {"success": True, "message": "没有提供更新内容"}
+
+            stmt = update(RedemptionCode).where(RedemptionCode.code.in_(codes)).values(values)
+            await db_session.execute(stmt)
             await db_session.commit()
 
-            logger.info(f"更新兑换码成功: {code}")
+            logger.info(f"成功批量更新 {len(codes)} 个兑换码")
 
             return {
                 "success": True,
-                "message": f"兑换码 {code} 已更新",
+                "message": f"成功批量更新 {len(codes)} 个兑换码",
                 "error": None
             }
 
         except Exception as e:
             await db_session.rollback()
-            logger.error(f"更新兑换码失败: {e}")
+            logger.error(f"批量更新兑换码失败: {e}")
             return {
                 "success": False,
                 "message": None,
-                "error": f"更新兑换码失败: {str(e)}"
+                "error": f"批量更新失败: {str(e)}"
             }
 
 

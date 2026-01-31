@@ -80,6 +80,10 @@
         <table class="data-table">
             <thead>
                 <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"
+                            style="width: auto; margin: 0;">
+                    </th>
                     <th>兑换码</th>
                     <th>状态</th>
                     <th>创建时间</th>
@@ -94,6 +98,10 @@
             <tbody id="codesTableBody">
                 {% for code in codes %}
                 <tr data-status="{{ code.status }}">
+                    <td>
+                        <input type="checkbox" class="code-checkbox" value="{{ code.code }}"
+                            onchange="updateSelectionCount()" style="width: auto; margin: 0;">
+                    </td>
                     <td>
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <i data-lucide="ticket" style="width: 14px; height: 14px; color: var(--text-muted);"></i>
@@ -154,6 +162,19 @@
         </table>
     </div>
 
+    <!-- 批量操作栏 -->
+    <div id="bulkActionBar" class="bulk-action-bar" style="display: none;">
+        <div class="bulk-info">
+            已选择 <span id="selectedCount">0</span> 个兑换码
+        </div>
+        <div class="bulk-actions">
+            <button onclick="showBulkEditModal()" class="btn btn-primary">
+                <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> 批量修改质保
+            </button>
+            <button onclick="deselectAll()" class="btn btn-secondary">取消全选</button>
+        </div>
+    </div>
+
     <!-- 分页 -->
     {% if pagination and pagination.total_pages > 1 %}
     <div class="pagination">
@@ -183,6 +204,37 @@
         <button onclick="showModal('generateCodeModal')" class="btn btn-primary">立即生成</button>
     </div>
     {% endif %}
+</div>
+
+<!-- 批量编辑兑换码模态框 -->
+<div id="bulkEditCodeModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>批量修改质保</h3>
+            <button class="modal-close" onclick="hideModal('bulkEditCodeModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info" style="margin-bottom: 1rem;">
+                您正在批量修改 <strong id="bulk-selected-count-display">0</strong> 个兑换码的质保信息。
+            </div>
+            <form id="bulkEditCodeForm" onsubmit="handleBulkEditCode(event)">
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-top: 1rem;">
+                        <input type="checkbox" id="bulk-edit-has-warranty" name="hasWarranty"
+                            style="width: auto; margin: 0;"
+                            onchange="toggleWarrantyDays(this, 'bulk-edit-warranty-days-group')">
+                        <span>质保兑换码 (可重复使用)</span>
+                    </label>
+                </div>
+                <div class="form-group" id="bulk-edit-warranty-days-group" style="display: none;">
+                    <label>质保时长 (天) *</label>
+                    <input type="number" id="bulk-edit-warranty-days" name="warrantyDays" class="form-control"
+                        value="30" min="1" max="3650">
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">保存修改</button>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- 编辑兑换码模态框 -->
@@ -220,10 +272,126 @@
 {% endblock %}
 
 {% block extra_css %}
+<style>
+    .bulk-action-bar {
+        position: fixed;
+        bottom: 2rem;
+        left: 50%;
+        transform: translateX(-50%);
+        background: white;
+        padding: 1rem 2rem;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 2rem;
+        z-index: 100;
+        border: 1px solid var(--border-color);
+        animation: slideUp 0.3s ease-out;
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translate(-50%, 100%);
+            opacity: 0;
+        }
+
+        to {
+            transform: translate(-50%, 0);
+            opacity: 1;
+        }
+    }
+
+    .bulk-info {
+        font-weight: 500;
+        color: var(--text-color);
+    }
+
+    .bulk-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+</style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // 全选/取消全选
+    function toggleSelectAll(checkbox) {
+        const checkboxes = document.querySelectorAll('.code-checkbox');
+        checkboxes.forEach(cb => {
+            // 只选择当前显示的行
+            if (cb.closest('tr').style.display !== 'none') {
+                cb.checked = checkbox.checked;
+            }
+        });
+        updateSelectionCount();
+    }
+
+    // 取消全选
+    function deselectAll() {
+        document.getElementById('selectAll').checked = false;
+        toggleSelectAll(document.getElementById('selectAll'));
+    }
+
+    // 更新选择计数
+    function updateSelectionCount() {
+        const selected = document.querySelectorAll('.code-checkbox:checked');
+        const count = selected.length;
+        document.getElementById('selectedCount').innerText = count;
+
+        const actionBar = document.getElementById('bulkActionBar');
+        if (count > 0) {
+            actionBar.style.display = 'flex';
+        } else {
+            actionBar.style.display = 'none';
+        }
+    }
+
+    // 显示批量编辑弹窗
+    function showBulkEditModal() {
+        const selected = document.querySelectorAll('.code-checkbox:checked');
+        document.getElementById('bulk-selected-count-display').innerText = selected.length;
+        showModal('bulkEditCodeModal');
+    }
+
+    // 处理批量编辑
+    async function handleBulkEditCode(event) {
+        event.preventDefault();
+        const selected = document.querySelectorAll('.code-checkbox:checked');
+        const codes = Array.from(selected).map(cb => cb.value);
+
+        const has_warranty = document.getElementById('bulk-edit-has-warranty').checked;
+        const warranty_days = parseInt(document.getElementById('bulk-edit-warranty-days').value) || 30;
+
+        try {
+            const response = await fetch('/admin/codes/bulk-update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    codes: codes,
+                    has_warranty: has_warranty,
+                    warranty_days: has_warranty ? warranty_days : null
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                showToast('批量更新成功', 'success');
+                hideModal('bulkEditCodeModal');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showToast(result.error || '批量更新失败', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('网络错误', 'error');
+        }
+    }
+
     // 当前筛选状态
     let currentFilter = 'all';
 
@@ -245,8 +413,12 @@
                 row.style.display = '';
             } else {
                 row.style.display = 'none';
+                // 如果行被隐藏，取消其复选框的选择
+                const cb = row.querySelector('.code-checkbox');
+                if (cb) cb.checked = false;
             }
         });
+        updateSelectionCount();
     }
 
     // 删除兑换码
