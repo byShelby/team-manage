@@ -436,7 +436,7 @@ function showWarrantyResult(data) {
                                     <div style="grid-column: span 2;">
                                         <div style="color: var(--text-muted); margin-bottom: 0.2rem;">质保到期</div>
                                         <div style="${record.warranty_valid ? 'color: var(--success);' : 'color: var(--danger);'}">
-                                            ${formatDate(record.warranty_expires_at)} ${record.warranty_valid ? '(有效)' : '(已过期)'}
+                                            ${record.warranty_expires_at ? `${formatDate(record.warranty_expires_at)} ${record.warranty_valid ? '(有效)' : '(已过期)'}` : '尚未开始计算 (首次使用后开启)'}
                                         </div>
                                     </div>
                                     ` : ''}

@@ -176,9 +176,24 @@ class WarrantyService:
                     await self.team_service.sync_team_info(team.id, db_session)
                     # 同步后 team 对象的属性会自动更新
 
-                # 提取质保信息
+                # 动态计算/提取质保信息
+                expiry_date = code_obj.warranty_expires_at
+                
+                # 如果是质保码且已使用，但到期时间为空，尝试动态计算
+                if code_obj.has_warranty and not expiry_date:
+                    start_time = code_obj.used_at or record.redeemed_at # 优先取首次使用时间
+                    if start_time:
+                        days = code_obj.warranty_days or 30
+                        expiry_date = start_time + timedelta(days=days)
+
                 is_valid = True
-                if code_obj.warranty_expires_at and code_obj.warranty_expires_at < get_now():
+                if expiry_date and expiry_date < get_now():
+                    is_valid = False
+                elif not expiry_date and code_obj.has_warranty and code_obj.status == "unused":
+                    # 未使用的质保码，暂时标记为有效
+                    is_valid = True
+                elif not expiry_date:
+                    # 既没日期也没记录，通常是非质保码
                     is_valid = False
 
                 if code_obj.has_warranty:
@@ -186,7 +201,7 @@ class WarrantyService:
                     # 以最近的一个质保码作为主要质保状态参考
                     if primary_code is None:
                         primary_warranty_valid = is_valid
-                        primary_expiry = code_obj.warranty_expires_at
+                        primary_expiry = expiry_date
                         primary_code = code_obj.code
 
                 # 记录封号 Team
@@ -202,7 +217,7 @@ class WarrantyService:
                     "code": code_obj.code,
                     "has_warranty": code_obj.has_warranty,
                     "warranty_valid": is_valid,
-                    "warranty_expires_at": code_obj.warranty_expires_at.isoformat() if code_obj.warranty_expires_at else None,
+                    "warranty_expires_at": expiry_date.isoformat() if expiry_date else None,
                     "status": code_obj.status,
                     "used_at": record.redeemed_at.isoformat() if record.redeemed_at else None,
                     "team_id": team.id,
