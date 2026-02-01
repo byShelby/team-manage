@@ -91,11 +91,11 @@ async def verify_code(
             )
 
         return VerifyCodeResponse(
-            success=result["success"],
-            valid=result["valid"],
-            reason=result["reason"],
-            teams=[TeamInfo(**team) for team in result["teams"]],
-            error=result["error"]
+            success=result.get("success", False),
+            valid=result.get("valid", False),
+            reason=result.get("reason"),
+            teams=[TeamInfo(**team) for team in result.get("teams", [])],
+            error=result.get("error")
         )
 
     except HTTPException:
@@ -152,10 +152,10 @@ async def confirm_redeem(
                 )
 
         return RedeemResponse(
-            success=result["success"],
-            message=result["message"],
-            team_info=result["team_info"],
-            error=result["error"]
+            success=result.get("success", False),
+            message=result.get("message"),
+            team_info=result.get("team_info"),
+            error=result.get("error")
         )
 
     except HTTPException:

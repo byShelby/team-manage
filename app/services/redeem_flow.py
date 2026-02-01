@@ -310,7 +310,8 @@ class RedeemFlowService:
                             "team_name": final_team_name,
                             "account_id": final_team_account_id,
                             "expires_at": final_team_expires_at.isoformat() if final_team_expires_at else None
-                        }
+                        },
+                        "error": None
                     }
                 else:
                     logger.warning(f"API 邀请失败 (尝试 {attempt + 1}): {invite_result['error']}")
