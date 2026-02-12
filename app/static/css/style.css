@@ -119,6 +119,7 @@ body {
 
 .sidebar {
     width: 260px;
+    flex-shrink: 0;
     padding: 2rem 1.5rem;
     border-right: 1px solid var(--border-base);
     height: calc(100vh - 64px);
@@ -142,6 +143,7 @@ body {
     text-decoration: none;
     border-radius: var(--radius-md);
     transition: var(--transition-base);
+    white-space: nowrap;
     font-weight: 500;
 }
 
@@ -163,6 +165,8 @@ body {
 
 .main-content {
     flex: 1;
+    min-width: 0;
+    /* Allow content to shrink and trigger scrolling */
     padding: 2rem 3rem;
     background-color: var(--bg-main);
     min-height: calc(100vh - 64px);
@@ -397,9 +401,10 @@ body {
 
 /* Tables */
 .table-container {
+    width: 100%;
     overflow-x: auto;
     overflow-y: auto;
-    /* Enable vertical scrolling */
+    /* Enable vertical and horizontal scrolling */
     margin: 1.5rem 0;
     -webkit-overflow-scrolling: touch;
     /* Smooth scrolling on iOS */
@@ -482,16 +487,25 @@ body {
 .pagination {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 1rem;
     margin-top: 1rem;
     flex-wrap: wrap;
     justify-content: space-between;
+}
+
+.pagination-numbers {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: nowrap;
 }
 
 .pagination-controls {
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    flex-wrap: nowrap;
+    /* Prevent page numbers from stacking */
 }
 
 .page-number {
