@@ -171,7 +171,7 @@ class WarrantyService:
 
             for record, code_obj, team in records_data:
                 # 同步 Team 状态
-                if team.status not in ["banned", "error"]:
+                if team.status != "banned":
                     logger.info(f"质保查询: 正在实时测试 Team {team.id} ({team.team_name}) 的状态")
                     await self.team_service.sync_team_info(team.id, db_session)
                     # 同步后 team 对象的属性会自动更新
