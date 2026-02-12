@@ -1005,6 +1005,52 @@ body {
         display: none;
     } 
     */
+
+    /* Mobile Interaction Optimizations */
+    /* Prevent iOS zoom on focus by forcing 16px font size */
+    input,
+    select,
+    textarea,
+    .form-control,
+    .form-control-sm {
+        font-size: 16px !important;
+    }
+
+    /* Larger touch targets for buttons */
+    .btn {
+        min-height: 44px;
+        padding: 0.625rem 1rem;
+    }
+
+    .btn-sm,
+    .btn-xs {
+        min-height: 36px;
+    }
+
+    .btn-icon {
+        width: 44px;
+        height: 44px;
+    }
+
+    .btn-sm.btn-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    /* Improved horizontal scrolling hint for tables */
+    .table-container {
+        position: relative;
+        background:
+            linear-gradient(to right, white 30%, rgba(255, 255, 255, 0)),
+            linear-gradient(to right, rgba(255, 255, 255, 0), white 70%) 0 100%,
+            radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, .2), rgba(0, 0, 0, 0)),
+            radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, .2), rgba(0, 0, 0, 0)) 0 100%;
+        background-repeat: no-repeat;
+        background-color: white;
+        background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+        background-position: 0 0, 100% 0, 0 0, 100% 0;
+        background-attachment: local, local, scroll, scroll;
+    }
 }
 
 
