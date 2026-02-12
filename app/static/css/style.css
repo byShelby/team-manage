@@ -398,13 +398,177 @@ body {
 /* Tables */
 .table-container {
     overflow-x: auto;
+    overflow-y: auto;
+    /* Enable vertical scrolling */
     margin: 1.5rem 0;
     -webkit-overflow-scrolling: touch;
     /* Smooth scrolling on iOS */
     border-radius: var(--radius-md);
     border: 1px solid var(--border-base);
     /* Add border to container */
+    max-height: calc(100vh - 280px);
+    /* Adjust based on valid screen real estate */
+    position: relative;
+    background-color: var(--bg-surface);
 }
+
+.dropdown-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-base);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    min-width: 220px;
+    padding: 0.5rem;
+    z-index: 100;
+    display: none;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 0.5rem;
+    animation: fadeIn 0.15s ease-out;
+}
+
+.dropdown-menu.show {
+    display: block;
+}
+
+.dropdown-header {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border-base);
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: var(--transition-fast);
+    font-size: 0.875rem;
+    color: var(--text-main);
+    user-select: none;
+}
+
+.dropdown-item:hover {
+    background-color: var(--bg-main);
+}
+
+.dropdown-item input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--border-base);
+}
+
+/* Pagination Advanced */
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.page-number {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    transition: var(--transition-fast);
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+
+.page-number:hover {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    border-color: var(--border-base);
+}
+
+.page-number.active {
+    background-color: var(--primary);
+    color: white;
+    font-weight: 600;
+    border-color: var(--primary);
+}
+
+.page-dots {
+    color: var(--text-muted);
+    padding: 0 0.5rem;
+}
+
+.per-page-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.per-page-select {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border-base);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface);
+    color: var(--text-main);
+    font-size: 0.875rem;
+    outline: none;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.per-page-select:hover {
+    border-color: var(--text-dim);
+}
+
+.per-page-select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+
 
 .data-table {
     width: 100%;
@@ -423,6 +587,14 @@ body {
     text-transform: uppercase;
     font-size: 0.75rem;
     letter-spacing: 0.05em;
+    position: sticky;
+    /* Make header sticky */
+    top: 0;
+    z-index: 10;
+    background-color: var(--bg-surface);
+    /* Ensure background is solid */
+    box-shadow: 0 1px 0 var(--border-base);
+    /* Add shadow for separation */
 }
 
 .data-table td {

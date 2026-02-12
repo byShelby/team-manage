@@ -88,6 +88,7 @@ class BulkCodeUpdateRequest(BaseModel):
 async def admin_dashboard(
     request: Request,
     page: int = 1,
+    per_page: int = 20,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
@@ -97,10 +98,10 @@ async def admin_dashboard(
     """
     try:
         from app.main import templates
-        logger.info(f"管理员访问控制台, search={search}, page={page}")
+        logger.info(f"管理员访问控制台, search={search}, page={page}, per_page={per_page}")
 
         # 设置每页数量
-        per_page = 20
+        # per_page = 20 (Removed hardcoded value)
         
         # 获取 Team 列表 (分页)
         teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search)
@@ -512,6 +513,7 @@ async def revoke_team_invite(
 async def codes_list_page(
     request: Request,
     page: int = 1,
+    per_page: int = 50,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
@@ -522,6 +524,7 @@ async def codes_list_page(
     Args:
         request: FastAPI Request 对象
         page: 页码
+        per_page: 每页数量
         search: 搜索关键词
         db: 数据库会话
         current_user: 当前用户（需要登录）
@@ -532,10 +535,10 @@ async def codes_list_page(
     try:
         from app.main import templates
 
-        logger.info(f"管理员访问兑换码列表页面, search={search}")
+        logger.info(f"管理员访问兑换码列表页面, search={search}, per_page={per_page}")
 
         # 获取兑换码 (分页)
-        per_page = 50
+        # per_page = 50 (Removed hardcoded value)
         codes_result = await redemption_service.get_all_codes(db, page=page, per_page=per_page, search=search)
         codes = codes_result.get("codes", [])
         total_codes = codes_result.get("total", 0)
@@ -894,6 +897,7 @@ async def records_page(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     page: Optional[str] = "1",
+    per_page: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
@@ -908,6 +912,7 @@ async def records_page(
         start_date: 开始日期
         end_date: 结束日期
         page: 页码
+        per_page: 每页数量
         db: 数据库会话
         current_user: 当前用户（需要登录）
 
@@ -930,7 +935,7 @@ async def records_page(
         except (ValueError, TypeError):
             page_int = 1
             
-        logger.info(f"管理员访问使用记录页面 (page={page_int})")
+        logger.info(f"管理员访问使用记录页面 (page={page_int}, per_page={per_page})")
 
         # 获取记录 (支持邮箱、兑换码、Team ID 筛选)
         records_result = await redemption_service.get_all_records(
@@ -999,7 +1004,7 @@ async def records_page(
                 pass
 
         # 分页
-        per_page = 20
+        # per_page = 20 (Removed hardcoded value)
         total_records = len(filtered_records)
         total_pages = math.ceil(total_records / per_page) if total_records > 0 else 1
 

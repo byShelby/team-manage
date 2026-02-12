@@ -88,8 +88,15 @@
             <h3>使用记录列表</h3>
             <span class="badge badge-info">{{ pagination.total }} 条记录</span>
         </div>
-        <div class="record-pagination-info">
-            第 {{ pagination.current_page }}/{{ pagination.total_pages }} 页
+        <div class="header-group">
+            <div class="dropdown-wrapper">
+                <button class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown('columnToggleDropdown')">
+                    <i data-lucide="columns" style="width: 16px; height: 16px;"></i> 列设置
+                </button>
+                <div id="columnToggleDropdown" class="dropdown-menu">
+                    <!-- Column checkboxes will be generated here -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -132,23 +139,99 @@
     </div>
 
     <!-- 分页 -->
-    {% if pagination and pagination.total_pages > 1 %}
+    {% if pagination %}
     <div class="pagination">
-        {% if pagination.current_page > 1 %}
-        <a href="?page=1{% if filters.email %}&email={{ filters.email }}{% endif %}{% if filters.code %}&code={{ filters.code }}{% endif %}{% if filters.team_id %}&team_id={{ filters.team_id }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}"
-            class="btn btn-sm btn-secondary">首页</a>
-        <a href="?page={{ pagination.current_page - 1 }}{% if filters.email %}&email={{ filters.email }}{% endif %}{% if filters.code %}&code={{ filters.code }}{% endif %}{% if filters.team_id %}&team_id={{ filters.team_id }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}"
-            class="btn btn-sm btn-secondary"><i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i></a>
-        {% endif %}
+        <div class="per-page-selector">
+            每页显示
+            <select class="per-page-select" onchange="changePerPage(this.value)">
+                <option value="20" {% if pagination.per_page==20 %}selected{% endif %}>20</option>
+                <option value="50" {% if pagination.per_page==50 %}selected{% endif %}>50</option>
+                <option value="100" {% if pagination.per_page==100 %}selected{% endif %}>100</option>
+            </select>
+        </div>
 
-        <span class="pagination-info">第 {{ pagination.current_page }} / {{ pagination.total_pages }} 页</span>
+        {% if pagination.total_pages > 1 %}
+        {% set query_params = [] %}
+        {% if filters.email %}{% set _ = query_params.append('email=' + filters.email|urlencode) %}{% endif %}
+        {% if filters.code %}{% set _ = query_params.append('code=' + filters.code|urlencode) %}{% endif %}
+        {% if filters.team_id %}{% set _ = query_params.append('team_id=' + filters.team_id|string|urlencode) %}{% endif
+        %}
+        {% if filters.start_date %}{% set _ = query_params.append('start_date=' + filters.start_date) %}{% endif %}
+        {% if filters.end_date %}{% set _ = query_params.append('end_date=' + filters.end_date) %}{% endif %}
+        {% if pagination.per_page != 20 %}{% set _ = query_params.append('per_page=' + pagination.per_page|string) %}{%
+        endif %}
 
-        {% if pagination.current_page < pagination.total_pages %} <a
-            href="?page={{ pagination.current_page + 1 }}{% if filters.email %}&email={{ filters.email }}{% endif %}{% if filters.code %}&code={{ filters.code }}{% endif %}{% if filters.team_id %}&team_id={{ filters.team_id }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}"
-            class="btn btn-sm btn-secondary"><i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i></a>
-            <a href="?page={{ pagination.total_pages }}{% if filters.email %}&email={{ filters.email }}{% endif %}{% if filters.code %}&code={{ filters.code }}{% endif %}{% if filters.team_id %}&team_id={{ filters.team_id }}{% endif %}{% if filters.start_date %}&start_date={{ filters.start_date }}{% endif %}{% if filters.end_date %}&end_date={{ filters.end_date }}{% endif %}"
-                class="btn btn-sm btn-secondary">末页</a>
+        {% set base_query = '&' + query_params|join('&') if query_params else '' %}
+
+        <div class="pagination-controls">
+            <!-- 首页 -->
+            <a href="?page=1{{ base_query }}"
+                class="btn btn-sm btn-secondary {% if pagination.current_page == 1 %}disabled{% endif %}" title="首页">
+                <i data-lucide="chevrons-left" style="width: 14px; height: 14px;"></i>
+            </a>
+
+            <!-- 上一页 -->
+            {% if pagination.current_page > 1 %}
+            <a href="?page={{ pagination.current_page - 1 }}{{ base_query }}" class="btn btn-sm btn-secondary"
+                title="上一页">
+                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+            </a>
+            {% else %}
+            <button class="btn btn-sm btn-secondary" disabled>
+                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+            </button>
             {% endif %}
+
+            <!-- 页码 -->
+            <div class="pagination-numbers">
+                {% set start_page = pagination.current_page - 2 %}
+                {% set end_page = pagination.current_page + 2 %}
+
+                {% if start_page < 1 %} {% set end_page=end_page + (1 - start_page) %} {% set start_page=1 %} {% endif
+                    %} {% if end_page> pagination.total_pages %}
+                    {% set start_page = start_page - (end_page - pagination.total_pages) %}
+                    {% set end_page = pagination.total_pages %}
+                    {% if start_page < 1 %} {% set start_page=1 %} {% endif %} {% endif %} {% if start_page> 1 %}
+                        <a href="?page=1{{ base_query }}" class="page-number">1</a>
+                        {% if start_page > 2 %}
+                        <span class="page-dots">...</span>
+                        {% endif %}
+                        {% endif %}
+
+                        {% for p in range(start_page, end_page + 1) %}
+                        <a href="?page={{ p }}{{ base_query }}"
+                            class="page-number {% if p == pagination.current_page %}active{% endif %}">{{ p }}</a>
+                        {% endfor %}
+
+                        {% if end_page < pagination.total_pages %} {% if end_page < pagination.total_pages - 1 %} <span
+                            class="page-dots">...</span>
+                            {% endif %}
+                            <a href="?page={{ pagination.total_pages }}{{ base_query }}" class="page-number">{{
+                                pagination.total_pages }}</a>
+                            {% endif %}
+            </div>
+
+            <!-- 下一页 -->
+            {% if pagination.current_page < pagination.total_pages %} <a
+                href="?page={{ pagination.current_page + 1 }}{{ base_query }}" class="btn btn-sm btn-secondary"
+                title="下一页">
+                <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                </a>
+                {% else %}
+                <button class="btn btn-sm btn-secondary" disabled>
+                    <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                </button>
+                {% endif %}
+
+                <!-- 末页 -->
+                <a href="?page={{ pagination.total_pages }}{{ base_query }}"
+                    class="btn btn-sm btn-secondary {% if pagination.current_page == pagination.total_pages %}disabled{% endif %}"
+                    title="末页">
+                    <i data-lucide="chevrons-right" style="width: 14px; height: 14px;"></i>
+                </a>
+        </div>
+        <span class="pagination-info" style="margin-left: 1rem;">共 {{ pagination.total }} 条</span>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -221,6 +304,88 @@
                 event.currentTarget.disabled = false;
             }
         }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        // Init Column Toggler
+        initColumnToggler('.data-table', 'records_list_columns');
+    });
+
+    // Column Toggler Logic & Pagination
+    function initColumnToggler(tableSelector, storageKey) {
+        const table = document.querySelector(tableSelector);
+        if (!table) return;
+
+        const headers = table.querySelectorAll('thead th');
+        const container = document.getElementById('columnToggleDropdown');
+        if (!container) return;
+
+        container.innerHTML = '<div class="dropdown-header">显示/隐藏列</div>';
+
+        // Load saved preferences
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+        headers.forEach((th, index) => {
+            const text = th.innerText.trim();
+            if (!text || text === '操作' || th.querySelector('input')) return; // Checkbox column or Action
+
+            const isVisible = !saved.includes(index);
+            if (!isVisible) {
+                th.style.display = 'none';
+                table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`).forEach(td => td.style.display = 'none');
+            }
+
+            const item = document.createElement('label');
+            item.className = 'dropdown-item';
+            item.innerHTML = `
+                <input type="checkbox" ${isVisible ? 'checked' : ''}>
+                <span>${text}</span>
+            `;
+
+            item.querySelector('input').addEventListener('change', (e) => {
+                const checked = e.target.checked;
+                // Toggle header
+                th.style.display = checked ? '' : 'none';
+                // Toggle cells
+                table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`).forEach(td => td.style.display = checked ? '' : 'none');
+
+                // Save to localStorage
+                const currentSaved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                if (checked) {
+                    const idx = currentSaved.indexOf(index);
+                    if (idx > -1) currentSaved.splice(idx, 1);
+                } else {
+                    if (!currentSaved.includes(index)) currentSaved.push(index);
+                }
+                localStorage.setItem(storageKey, JSON.stringify(currentSaved));
+            });
+
+            container.appendChild(item);
+        });
+    }
+
+    function toggleDropdown(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.toggle('show');
+            document.querySelectorAll('.dropdown-menu').forEach(d => {
+                if (d.id !== id) d.classList.remove('show');
+            });
+        }
+    }
+
+    // Close dropdowns
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.dropdown-wrapper') && !e.target.closest('.dropdown-toggle')) {
+            document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+        }
+    });
+
+    function changePerPage(val) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('per_page', val);
+        url.searchParams.set('page', 1);
+        window.location.href = url.toString();
     }
 </script>
 {% endblock %}
