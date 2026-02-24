@@ -267,7 +267,13 @@
                 </div>
                 <div class="form-group">
                     <label>Access Token (AT) <span class="required">*</span></label>
-                    <input type="text" id="edit-team-token" name="accessToken" class="form-control" required>
+                    <div class="input-group-btn">
+                        <input type="text" id="edit-team-token" name="accessToken" class="form-control" required>
+                        <button type="button" class="btn btn-secondary" onclick="refreshATInModal()"
+                            title="立即从 ST/RT 刷新 AT">
+                            <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> 刷新
+                        </button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Refresh Token (RT)</label>
@@ -375,6 +381,49 @@
             if (response.ok && data.success) {
                 showToast('刷新成功', 'success');
                 setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast(data.error || '刷新失败', 'error');
+            }
+        } catch (error) {
+            showToast('网络错误', 'error');
+        }
+    }
+
+    async function refreshATInModal() {
+        const teamId = document.getElementById('edit-team-id').value;
+        if (!teamId) return;
+
+        if (!confirm('确定要刷新此 Team 的 Access Token 吗?')) {
+            return;
+        }
+
+        try {
+            showToast('正在刷新...', 'info');
+            const response = await fetch(`/api/teams/${teamId}/refresh`, {
+                method: 'GET'
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                showToast('刷新成功', 'success');
+
+                // 刷新成功后，重新获取 Team 信息以更新模态框中的 AT
+                const infoResponse = await fetch(`/admin/teams/${teamId}/info`);
+                const infoData = await infoResponse.json();
+
+                if (infoResponse.ok && infoData.success) {
+                    const team = infoData.team;
+                    document.getElementById('edit-team-token').value = team.access_token || '';
+                    document.getElementById('edit-team-refresh-token').value = team.refresh_token || '';
+                    document.getElementById('edit-team-session-token').value = team.session_token || '';
+                    document.getElementById('edit-team-role').value = team.account_role || '未知';
+
+                    // 重新创建图标以免刷新后丢失
+                    if (window.lucide) {
+                        lucide.createIcons();
+                    }
+                }
             } else {
                 showToast(data.error || '刷新失败', 'error');
             }

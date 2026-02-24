@@ -513,7 +513,8 @@ class ChatGPTService:
     async def refresh_access_token_with_session_token(
         self,
         session_token: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        account_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         使用 session_token 刷新 access_token
@@ -521,36 +522,47 @@ class ChatGPTService:
         Args:
             session_token: session_token
             db_session: 数据库会话
+            account_id: Account ID (可选,如果提供则会加上 workspace 切换参数)
             
         Returns:
-            结果字典,包含 success, access_token, error
+            结果字典,包含 success, access_token, session_token, error
         """
         url = "https://chatgpt.com/api/auth/session"
         
+        # 如果提供了 account_id,则加上 workspace 切换参数
+        if account_id:
+            params = {
+                "exchange_workspace_token": "true",
+                "workspace_id": account_id,
+                "reason": "setCurrentAccount"
+            }
+            query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+            url = f"{url}?{query_string}"
+            
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Cookie": f"__Secure-next-auth.session-token={session_token}"
         }
         
-        cookies = {
-            "__Secure-next-auth.session-token": session_token
-        }
-        
-        logger.info("使用 session_token 刷新 access_token")
+        logger.info(f"使用 session_token 刷新 access_token (workspace: {account_id if account_id else 'default'})")
         
         if not self.session:
             self.session = await self._create_session(db_session)
             
         try:
-            response = await self.session.get(url, headers=headers, cookies=cookies)
+            response = await self.session.get(url, headers=headers)
             status_code = response.status_code
             if status_code == 200:
                 data = response.json()
                 access_token = data.get("accessToken")
+                new_session_token = data.get("sessionToken")
+                
                 if access_token:
                     return {
                         "success": True,
-                        "access_token": access_token
+                        "access_token": access_token,
+                        "session_token": new_session_token
                     }
                 return {"success": False, "error": "响应中未包含 accessToken"}
             else:

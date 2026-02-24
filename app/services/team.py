@@ -154,12 +154,19 @@ class TeamService:
         if team.session_token_encrypted:
             session_token = encryption_service.decrypt_token(team.session_token_encrypted)
             refresh_result = await self.chatgpt_service.refresh_access_token_with_session_token(
-                session_token, db_session
+                session_token, db_session, account_id=team.account_id
             )
             if refresh_result["success"]:
                 new_at = refresh_result["access_token"]
+                new_st = refresh_result.get("session_token")
                 logger.info(f"Team {team.id} 通过 session_token 成功刷新 AT")
                 team.access_token_encrypted = encryption_service.encrypt_token(new_at)
+                
+                # 如果返回了新的 session_token,予以更新
+                if new_st and new_st != session_token:
+                    logger.info(f"Team {team.id} Session Token 已更新")
+                    team.session_token_encrypted = encryption_service.encrypt_token(new_st)
+                
                 # 成功刷新，重置错误状态
                 await self._reset_error_status(team, db_session)
                 return new_at
@@ -233,10 +240,13 @@ class TeamService:
                 # 尝试 session_token
                 if session_token:
                     refresh_result = await self.chatgpt_service.refresh_access_token_with_session_token(
-                        session_token, db_session
+                        session_token, db_session, account_id=account_id
                     )
                     if refresh_result["success"]:
                         access_token = refresh_result["access_token"]
+                        # 导入时如果 ST 变了,更新变量以便后续保存
+                        if refresh_result.get("session_token"):
+                            session_token = refresh_result["session_token"]
                         is_at_valid = True
                         logger.info("导入时通过 session_token 成功获取 AT")
                 

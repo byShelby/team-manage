@@ -849,6 +849,21 @@ body {
     margin-bottom: 1.5rem;
 }
 
+.input-group-btn {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input-group-btn .form-control {
+    flex: 1;
+}
+
+.input-group-btn .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+
 .search-form-grid .form-group {
     margin-bottom: 0;
 }
