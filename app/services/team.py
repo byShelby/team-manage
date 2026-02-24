@@ -158,7 +158,7 @@ class TeamService:
         if team.session_token_encrypted:
             session_token = encryption_service.decrypt_token(team.session_token_encrypted)
             refresh_result = await self.chatgpt_service.refresh_access_token_with_session_token(
-                session_token, db_session, account_id=team.account_id
+                session_token, db_session, account_id=team.account_id, identifier=team.email
             )
             if refresh_result["success"]:
                 new_at = refresh_result["access_token"]
@@ -183,7 +183,7 @@ class TeamService:
         if team.refresh_token_encrypted and team.client_id:
             refresh_token = encryption_service.decrypt_token(team.refresh_token_encrypted)
             refresh_result = await self.chatgpt_service.refresh_access_token_with_refresh_token(
-                refresh_token, team.client_id, db_session
+                refresh_token, team.client_id, db_session, identifier=team.email
             )
             if refresh_result["success"]:
                 new_at = refresh_result["access_token"]
@@ -244,7 +244,7 @@ class TeamService:
                 # 尝试 session_token
                 if session_token:
                     refresh_result = await self.chatgpt_service.refresh_access_token_with_session_token(
-                        session_token, db_session, account_id=account_id
+                        session_token, db_session, account_id=account_id, identifier=email or "import"
                     )
                     if refresh_result["success"]:
                         access_token = refresh_result["access_token"]
@@ -257,7 +257,7 @@ class TeamService:
                 # 尝试 refresh_token
                 if not is_at_valid and refresh_token and client_id:
                     refresh_result = await self.chatgpt_service.refresh_access_token_with_refresh_token(
-                        refresh_token, client_id, db_session
+                        refresh_token, client_id, db_session, identifier=email or "import"
                     )
                     if refresh_result["success"]:
                         access_token = refresh_result["access_token"]
@@ -304,7 +304,8 @@ class TeamService:
             
             account_result = await self.chatgpt_service.get_account_info(
                 access_token,
-                db_session
+                db_session,
+                identifier=email
             )
             
             if account_result["success"]:
@@ -791,7 +792,8 @@ class TeamService:
             # 3. 获取账户信息
             account_result = await self.chatgpt_service.get_account_info(
                 access_token,
-                db_session
+                db_session,
+                identifier=team.email
             )
 
             if not account_result["success"]:
@@ -817,7 +819,7 @@ class TeamService:
                             }
 
                         # 使用新 Token 再次尝试
-                        account_result = await self.chatgpt_service.get_account_info(new_token, db_session)
+                        account_result = await self.chatgpt_service.get_account_info(new_token, db_session, identifier=team.email)
                         if account_result["success"]:
                             logger.info(f"Team {team.id} 自动刷新 Token 后重试同步成功")
                         else:
@@ -888,13 +890,15 @@ class TeamService:
             members_result = await self.chatgpt_service.get_members(
                 access_token,
                 current_account["account_id"],
-                db_session
+                db_session,
+                identifier=team.email
             )
             
             invites_result = await self.chatgpt_service.get_invites(
                 access_token,
                 current_account["account_id"],
-                db_session
+                db_session,
+                identifier=team.email
             )
 
             current_members = 0
@@ -1233,7 +1237,8 @@ class TeamService:
                 access_token,
                 team.account_id,
                 email,
-                db_session
+                db_session,
+                identifier=team.email
             )
 
             if not revoke_result["success"]:
@@ -1346,7 +1351,8 @@ class TeamService:
                 access_token,
                 team.account_id,
                 email,
-                db_session
+                db_session,
+                identifier=team.email
             )
 
             if not invite_result["success"]:
@@ -1441,7 +1447,8 @@ class TeamService:
                 access_token,
                 team.account_id,
                 user_id,
-                db_session
+                db_session,
+                identifier=team.email
             )
 
             if not delete_result["success"]:

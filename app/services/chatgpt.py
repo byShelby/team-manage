@@ -4,10 +4,12 @@ ChatGPT API 服务
 """
 import asyncio
 import logging
+import random
 from typing import Optional, Dict, Any, List
 from curl_cffi.requests import AsyncSession
 from app.services.settings import settings_service
 from sqlalchemy.ext.asyncio import AsyncSession as DBAsyncSession
+from app.utils.jwt_parser import JWTParser
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,9 @@ class ChatGPTService:
 
     def __init__(self):
         """初始化 ChatGPT API 服务"""
-        # 不再使用全局 session 以防止 Cookie 污染
+        self.jwt_parser = JWTParser()
+        # 会话池：按标识符（如 Email 或 TeamID）隔离，防止身份泄漏并提高 CF 稳定性
+        self._sessions: Dict[str, AsyncSession] = {}
         self.proxy: Optional[str] = None
 
     async def _get_proxy_config(self, db_session: DBAsyncSession) -> Optional[str]:
@@ -40,12 +44,23 @@ class ChatGPTService:
         创建 HTTP 会话
         """
         proxy = await self._get_proxy_config(db_session)
+        # 使用 chrome110 指纹，这是 curl_cffi 中绕过 CF 最稳定的版本之一
         session = AsyncSession(
-            impersonate="chrome",
+            impersonate="chrome110",
             proxies={"http": proxy, "https": proxy} if proxy else None,
-            timeout=30
+            timeout=30,
+            verify=False # 某些代理环境下需要，或根据需求开启
         )
         return session
+
+    async def _get_session(self, db_session: DBAsyncSession, identifier: str) -> AsyncSession:
+        """
+        根据标识符获取或创建持久会话
+        """
+        if identifier not in self._sessions:
+            logger.info(f"为标识符 {identifier} 创建新会话")
+            self._sessions[identifier] = await self._create_session(db_session)
+        return self._sessions[identifier]
 
     async def _make_request(
         self,
@@ -53,143 +68,123 @@ class ChatGPTService:
         url: str,
         headers: Dict[str, str],
         json_data: Optional[Dict[str, Any]] = None,
-        db_session: Optional[DBAsyncSession] = None
+        db_session: Optional[DBAsyncSession] = None,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
         """
-        发送 HTTP 请求 (使用独立的临时会话防止 Cookie 污染)
+        发送 HTTP 请求 (使用持久化隔离会话，提高 CF 通过率并防止污染)
         """
-        async with await self._create_session(db_session) as session:
-            for attempt in range(self.MAX_RETRIES):
-                try:
-                    logger.info(f"发送请求: {method} {url} (尝试 {attempt + 1}/{self.MAX_RETRIES})")
+        # 尝试从 Token 自动提取 Email 作为标识符，确保身份绝对隔离
+        if identifier == "default" and "Authorization" in headers:
+            token = headers["Authorization"].replace("Bearer ", "")
+            email = self.jwt_parser.extract_email(token)
+            if email:
+                identifier = email
 
-                    if method == "GET":
-                        response = await session.get(url, headers=headers)
-                    elif method == "POST":
-                        response = await session.post(url, headers=headers, json=json_data)
-                    elif method == "DELETE":
-                        response = await session.delete(url, headers=headers, json=json_data)
-                    else:
-                        raise ValueError(f"不支持的 HTTP 方法: {method}")
+        session = await self._get_session(db_session, identifier)
+        
+        # 补全基础浏览器请求头
+        base_headers = {
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://chatgpt.com/",
+            "Origin": "https://chatgpt.com",
+            "Connection": "keep-alive"
+        }
+        # 合并请求头，不要轻易覆盖 User-Agent 以免破坏 impersonate 的指纹
+        for k, v in base_headers.items():
+            if k not in headers:
+                headers[k] = v
 
-                    status_code = response.status_code
-                    logger.info(f"响应状态码: {status_code}")
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                # 随机微小延迟，模拟真实用户行为
+                if attempt > 0:
+                    delay = self.RETRY_DELAYS[attempt-1] + random.uniform(0.5, 1.5)
+                    await asyncio.sleep(delay)
 
-                    # 2xx 成功
-                    if 200 <= status_code < 300:
-                        try:
-                            data = response.json()
-                        except Exception:
-                            data = {}
+                logger.info(f"[{identifier}] 发送请求: {method} {url} (尝试 {attempt + 1})")
 
-                        return {
-                            "success": True,
-                            "status_code": status_code,
-                            "data": data,
-                            "error": None
-                        }
+                if method == "GET":
+                    response = await session.get(url, headers=headers)
+                elif method == "POST":
+                    response = await session.post(url, headers=headers, json=json_data)
+                elif method == "DELETE":
+                    response = await session.delete(url, headers=headers, json=json_data)
+                else:
+                    raise ValueError(f"不支持的 HTTP 方法: {method}")
 
-                    # 4xx 客户端错误 (不重试)
-                    if 400 <= status_code < 500:
-                        error_code = None
-                        try:
-                            error_data = response.json()
-                            error_msg = error_data.get("detail", response.text)
-                            if isinstance(error_data, dict):
-                                error_info = error_data.get("error")
-                                if isinstance(error_info, dict):
-                                    error_code = error_info.get("code")
-                                else:
-                                    error_code = error_data.get("code")
-                        except Exception:
-                            error_msg = response.text
+                status_code = response.status_code
+                logger.info(f"响应状态码: {status_code}")
 
-                        logger.warning(f"客户端错误 {status_code}: {error_msg} (code: {error_code})")
-                        return {
-                            "success": False,
-                            "status_code": status_code,
-                            "data": None,
-                            "error": error_msg,
-                            "error_code": error_code
-                        }
+                if 200 <= status_code < 300:
+                    try:
+                        data = response.json()
+                    except Exception:
+                        data = {}
+                    return {"success": True, "status_code": status_code, "data": data, "error": None}
 
-                    # 5xx 服务器错误 (需要重试)
-                    if status_code >= 500:
-                        logger.warning(f"服务器错误 {status_code}, 准备重试")
-                        if attempt < self.MAX_RETRIES - 1:
-                            delay = self.RETRY_DELAYS[attempt]
-                            await asyncio.sleep(delay)
-                            continue
-                        return {
-                            "success": False,
-                            "status_code": status_code,
-                            "data": None,
-                            "error": f"服务器错误 {status_code}, 已重试 {self.MAX_RETRIES} 次"
-                        }
+                if 400 <= status_code < 500:
+                    error_msg = response.text
+                    error_code = None
+                    try:
+                        error_data = response.json()
+                        error_msg = error_data.get("detail", error_msg)
+                        if isinstance(error_data, dict):
+                            error_info = error_data.get("error")
+                            error_code = error_info.get("code") if isinstance(error_info, dict) else error_data.get("code")
+                    except Exception:
+                        pass
+                    
+                    logger.warning(f"客户端错误 {status_code}: {error_msg}")
+                    return {"success": False, "status_code": status_code, "error": error_msg, "error_code": error_code}
 
-                except asyncio.TimeoutError:
-                    logger.warning(f"请求超时 (尝试 {attempt + 1}/{self.MAX_RETRIES})")
+                if status_code >= 500:
                     if attempt < self.MAX_RETRIES - 1:
-                        delay = self.RETRY_DELAYS[attempt]
-                        await asyncio.sleep(delay)
                         continue
-                    return {"success": False, "status_code": 0, "data": None, "error": f"请求超时, 已重试 {self.MAX_RETRIES} 次"}
+                    return {"success": False, "status_code": status_code, "error": f"服务器错误 {status_code}"}
 
-                except Exception as e:
-                    logger.error(f"请求异常: {e}")
-                    if attempt < self.MAX_RETRIES - 1:
-                        delay = self.RETRY_DELAYS[attempt]
-                        await asyncio.sleep(delay)
-                        continue
-                    return {"success": False, "status_code": 0, "data": None, "error": str(e)}
+            except Exception as e:
+                logger.error(f"请求异常: {e}")
+                if attempt < self.MAX_RETRIES - 1:
+                    continue
+                return {"success": False, "status_code": 0, "error": str(e)}
 
-            return {"success": False, "status_code": 0, "data": None, "error": "未知错误"}
+        return {"success": False, "status_code": 0, "error": "未知错误"}
 
     async def send_invite(
         self,
         access_token: str,
         account_id: str,
         email: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        发送 Team 邀请
-        """
+        """发送 Team 邀请"""
         url = f"{self.BASE_URL}/accounts/{account_id}/invites"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {access_token}",
             "chatgpt-account-id": account_id
         }
-        json_data = {
-            "email_addresses": [email],
-            "role": "standard-user",
-            "resend_emails": True
-        }
-        logger.info(f"发送邀请: {email} -> Team {account_id}")
-        result = await self._make_request("POST", url, headers, json_data, db_session)
-        if result["status_code"] == 409:
-            result["error"] = "用户已是该 Team 的成员"
-        if result["status_code"] == 422:
-            result["error"] = "Team 已满或邮箱格式错误"
-        return result
+        json_data = {"email_addresses": [email], "role": "standard-user", "resend_emails": True}
+        return await self._make_request("POST", url, headers, json_data, db_session, identifier)
 
     async def get_members(
         self,
         access_token: str,
         account_id: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        获取 Team 成员列表
-        """
+        """获取 Team 成员列表"""
         all_members = []
         offset = 0
         limit = 50
         while True:
             url = f"{self.BASE_URL}/accounts/{account_id}/users?limit={limit}&offset={offset}"
             headers = {"Authorization": f"Bearer {access_token}"}
-            result = await self._make_request("GET", url, headers, db_session=db_session)
+            result = await self._make_request("GET", url, headers, db_session=db_session, identifier=identifier)
             if not result["success"]:
                 return {"success": False, "members": [], "total": 0, "error": result["error"]}
             data = result["data"]
@@ -205,17 +200,16 @@ class ChatGPTService:
         self,
         access_token: str,
         account_id: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        获取 Team 邀请列表
-        """
+        """获取 Team 邀请列表"""
         url = f"{self.BASE_URL}/accounts/{account_id}/invites"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "chatgpt-account-id": account_id
         }
-        result = await self._make_request("GET", url, headers, db_session=db_session)
+        result = await self._make_request("GET", url, headers, db_session=db_session, identifier=identifier)
         if not result["success"]:
             return {"success": False, "items": [], "total": 0, "error": result["error"]}
         data = result["data"]
@@ -227,11 +221,10 @@ class ChatGPTService:
         access_token: str,
         account_id: str,
         email: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        撤回 Team 邀请
-        """
+        """撤回邀请"""
         url = f"{self.BASE_URL}/accounts/{account_id}/invites"
         headers = {
             "Content-Type": "application/json",
@@ -239,54 +232,49 @@ class ChatGPTService:
             "chatgpt-account-id": account_id
         }
         json_data = {"email_address": email}
-        return await self._make_request("DELETE", url, headers, json_data, db_session)
+        return await self._make_request("DELETE", url, headers, json_data, db_session, identifier)
 
     async def delete_member(
         self,
         access_token: str,
         account_id: str,
         user_id: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        删除 Team 成员
-        """
+        """删除成员"""
         url = f"{self.BASE_URL}/accounts/{account_id}/users/{user_id}"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "chatgpt-account-id": account_id
         }
-        result = await self._make_request("DELETE", url, headers, db_session=db_session)
-        if result["status_code"] == 403:
-            result["error"] = "无权限删除该成员 (可能是 owner)"
-        if result["status_code"] == 404:
-            result["error"] = "用户不存在"
+        result = await self._make_request("DELETE", url, headers, db_session=db_session, identifier=identifier)
         return result
 
     async def get_account_info(
         self,
         access_token: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        获取 account-id 和订阅信息
-        """
+        """获取账户和订阅信息"""
         url = f"{self.BASE_URL}/accounts/check/v4-2023-04-27"
         headers = {"Authorization": f"Bearer {access_token}"}
-        result = await self._make_request("GET", url, headers, db_session=db_session)
+        result = await self._make_request("GET", url, headers, db_session=db_session, identifier=identifier)
         if not result["success"]:
             return {"success": False, "accounts": [], "error": result["error"]}
+        
         data = result["data"]
         accounts_data = data.get("accounts", {})
         team_accounts = []
-        for account_id, account_info in accounts_data.items():
-            account = account_info.get("account", {})
-            entitlement = account_info.get("entitlement", {})
+        for aid, info in accounts_data.items():
+            account = info.get("account", {})
+            entitlement = info.get("entitlement", {})
             if account.get("plan_type") == "team":
                 team_accounts.append({
-                    "account_id": account_id,
+                    "account_id": aid,
                     "name": account.get("name", ""),
-                    "plan_type": account.get("plan_type", ""),
+                    "plan_type": "team",
                     "account_user_role": account.get("account_user_role", ""),
                     "subscription_plan": entitlement.get("subscription_plan", ""),
                     "expires_at": entitlement.get("expires_at", ""),
@@ -298,62 +286,50 @@ class ChatGPTService:
         self,
         session_token: str,
         db_session: DBAsyncSession,
-        account_id: Optional[str] = None
+        account_id: Optional[str] = None,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        使用 session_token 刷新 access_token (强制使用独立会话以防止 identity leakage)
-        """
+        """使用 session_token 刷新 AT (使用标识符隔离会话)"""
         url = "https://chatgpt.com/api/auth/session"
         if account_id:
-            params = {
-                "exchange_workspace_token": "true",
-                "workspace_id": account_id,
-                "reason": "setCurrentAccount"
-            }
-            query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-            url = f"{url}?{query_string}"
+            url += f"?exchange_workspace_token=true&workspace_id={account_id}&reason=setCurrentAccount"
             
         headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Cookie": f"__Secure-next-auth.session-token={session_token}"
         }
         
-        async with await self._create_session(db_session) as session:
-            try:
-                response = await session.get(url, headers=headers)
-                status_code = response.status_code
-                if status_code == 200:
-                    data = response.json()
-                    access_token = data.get("accessToken")
-                    new_session_token = data.get("sessionToken")
-                    if access_token:
-                        return {"success": True, "access_token": access_token, "session_token": new_session_token}
-                    return {"success": False, "error": "响应中未包含 accessToken"}
-                else:
-                    error_msg = response.text
-                    error_code = None
-                    try:
-                        error_data = response.json()
-                        error_msg = error_data.get("detail", error_msg)
-                        if isinstance(error_data, dict):
-                            error_info = error_data.get("error")
-                            error_code = error_info.get("code") if isinstance(error_info, dict) else error_data.get("code")
-                    except Exception:
-                        pass
-                    return {"success": False, "status_code": status_code, "error": error_msg, "error_code": error_code}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
+        # 对于刷新请求，如果未提供 identifier，我们使用 session_token 的前 8 位作为临时隔离
+        if identifier == "default":
+            identifier = f"st_{session_token[:8]}"
+
+        session = await self._get_session(db_session, identifier)
+        try:
+            # 手动合并基础头
+            headers["Referer"] = "https://chatgpt.com/"
+            headers["Connection"] = "keep-alive"
+            
+            response = await session.get(url, headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                at = data.get("accessToken")
+                st = data.get("sessionToken")
+                if at:
+                    return {"success": True, "access_token": at, "session_token": st}
+                return {"success": False, "error": "响应中未包含 accessToken"}
+            else:
+                return {"success": False, "status_code": response.status_code, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     async def refresh_access_token_with_refresh_token(
         self,
         refresh_token: str,
         client_id: str,
-        db_session: DBAsyncSession
+        db_session: DBAsyncSession,
+        identifier: str = "default"
     ) -> Dict[str, Any]:
-        """
-        使用 refresh_token 刷新 access_token (强制使用独立会话以防止 identity leakage)
-        """
+        """使用 refresh_token 刷新 AT"""
         url = "https://auth.openai.com/oauth/token"
         json_data = {
             "client_id": client_id,
@@ -361,38 +337,30 @@ class ChatGPTService:
             "redirect_uri": "com.openai.sora://auth.openai.com/android/com.openai.sora/callback",
             "refresh_token": refresh_token
         }
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        async with await self._create_session(db_session) as session:
+        headers = {"Content-Type": "application/json"}
+        
+        if identifier == "default":
+            identifier = f"rt_{refresh_token[:8]}"
+
+        return await self._make_request("POST", url, headers, json_data, db_session, identifier)
+
+    async def clear_session(self, identifier: str):
+        """清理指定身份的会话"""
+        if identifier in self._sessions:
             try:
-                response = await session.post(url, headers=headers, json=json_data)
-                status_code = response.status_code
-                if status_code == 200:
-                    data = response.json()
-                    return {"success": True, "access_token": data.get("access_token"), "refresh_token": data.get("refresh_token")}
-                else:
-                    error_msg = response.text
-                    error_code = None
-                    try:
-                        error_data = response.json()
-                        if isinstance(error_data, dict):
-                            error_code = error_data.get("error")
-                            error_msg = error_data.get("error_description", error_msg)
-                    except Exception:
-                        pass
-                    return {"success": False, "status_code": status_code, "error": error_msg, "error_code": error_code}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
+                await self._sessions[identifier].close()
+            except:
+                pass
+            del self._sessions[identifier]
 
     async def close(self):
-        """关闭 HTTP 会话 (目前使用临时会话,此方法留空)"""
-        pass
-
-    async def clear_session(self):
-        """清理当前会话 (目前使用临时会话,此方法留空)"""
-        pass
+        """关闭所有会话"""
+        for session in self._sessions.values():
+            try:
+                await session.close()
+            except:
+                pass
+        self._sessions.clear()
 
 
 # 创建全局实例
