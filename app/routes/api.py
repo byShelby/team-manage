@@ -26,6 +26,7 @@ team_service = TeamService()
 @router.get("/teams/{team_id}/refresh")
 async def refresh_team(
     team_id: int,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -34,6 +35,7 @@ async def refresh_team(
 
     Args:
         team_id: Team ID
+        force: 是否强制刷新 Token
         db: 数据库会话
         current_user: 当前用户（需要登录）
 
@@ -41,9 +43,9 @@ async def refresh_team(
         刷新结果
     """
     try:
-        logger.info(f"刷新 Team {team_id} 信息")
+        logger.info(f"刷新 Team {team_id} 信息, force={force}")
 
-        result = await team_service.sync_team_info(team_id, db)
+        result = await team_service.sync_team_info(team_id, db, force_refresh=force)
 
         if not result["success"]:
             return JSONResponse(

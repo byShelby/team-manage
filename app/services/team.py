@@ -126,13 +126,14 @@ class TeamService:
             team.status = "active"
         await db_session.commit()
 
-    async def ensure_access_token(self, team: Team, db_session: AsyncSession) -> Optional[str]:
+    async def ensure_access_token(self, team: Team, db_session: AsyncSession, force_refresh: bool = False) -> Optional[str]:
         """
         确保 AT Token 有效,如果过期则尝试刷新
         
         Args:
             team: Team 对象
             db_session: 数据库会话
+            force_refresh: 是否强制刷新 (忽略过期检查)
             
         Returns:
             有效的 AT Token, 刷新失败返回 None
@@ -141,11 +142,14 @@ class TeamService:
             # 1. 解密当前 Token
             access_token = encryption_service.decrypt_token(team.access_token_encrypted)
             
-            # 2. 检查是否过期
-            if not self.jwt_parser.is_token_expired(access_token):
+            # 2. 检查是否过期 (如果不强制刷新且未过期，则返回)
+            if not force_refresh and not self.jwt_parser.is_token_expired(access_token):
                 return access_token
                 
-            logger.info(f"Team {team.id} ({team.email}) Token 已过期, 尝试刷新")
+            if force_refresh:
+                logger.info(f"Team {team.id} ({team.email}) 强制刷新 Token")
+            else:
+                logger.info(f"Team {team.id} ({team.email}) Token 已过期, 尝试刷新")
         except Exception as e:
             logger.error(f"解密或验证 Token 失败: {e}")
             access_token = None # 可能是解密失败，强制走刷新流程
@@ -722,7 +726,8 @@ class TeamService:
     async def sync_team_info(
         self,
         team_id: int,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
         同步单个 Team 的信息
@@ -730,6 +735,7 @@ class TeamService:
         Args:
             team_id: Team ID
             db_session: 数据库会话
+            force_refresh: 是否强制刷新 Token
 
         Returns:
             结果字典,包含 success, message, error
@@ -748,7 +754,7 @@ class TeamService:
                 }
 
             # 2. 确保 AT Token 有效
-            access_token = await self.ensure_access_token(team, db_session)
+            access_token = await self.ensure_access_token(team, db_session, force_refresh=force_refresh)
             if not access_token:
                 if team.status == "banned":
                     return {
@@ -778,7 +784,7 @@ class TeamService:
 
                 if is_token_expired:
                     logger.info(f"Team {team.id} 同步时发现 Token 过期，尝试立即刷新并重试...")
-                    new_token = await self.ensure_access_token(team, db_session)
+                    new_token = await self.ensure_access_token(team, db_session, force_refresh=True)
                     if new_token:
                         # 使用新 Token 再次尝试
                         account_result = await self.chatgpt_service.get_account_info(new_token, db_session)
