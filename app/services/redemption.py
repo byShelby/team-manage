@@ -482,6 +482,21 @@ class RedemptionService:
                 "error": f"获取所有兑换码失败: {str(e)}"
             }
 
+    async def get_unused_count(
+        self,
+        db_session: AsyncSession
+    ) -> int:
+        """
+        获取未使用的兑换码数量
+        """
+        try:
+            stmt = select(func.count(RedemptionCode.id)).where(RedemptionCode.status == "unused")
+            result = await db_session.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"获取未使用兑换码数量失败: {e}")
+            return 0
+
     async def get_code_by_code(
         self,
         code: str,

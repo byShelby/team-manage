@@ -1133,7 +1133,10 @@ async def settings_page(
                 "active_page": "settings",
                 "proxy_enabled": proxy_config["enabled"],
                 "proxy": proxy_config["proxy"],
-                "log_level": log_level
+                "log_level": log_level,
+                "webhook_url": await settings_service.get_setting(db, "webhook_url", ""),
+                "low_stock_threshold": await settings_service.get_setting(db, "low_stock_threshold", "10"),
+                "api_key": await settings_service.get_setting(db, "api_key", "")
             }
         )
 
@@ -1154,6 +1157,13 @@ class ProxyConfigRequest(BaseModel):
 class LogLevelRequest(BaseModel):
     """日志级别请求"""
     level: str = Field(..., description="日志级别")
+
+
+class WebhookSettingsRequest(BaseModel):
+    """Webhook 设置请求"""
+    webhook_url: str = Field("", description="Webhook URL")
+    low_stock_threshold: int = Field(10, description="库存阈值")
+    api_key: str = Field("", description="API Key")
 
 
 @router.post("/settings/proxy")
@@ -1258,3 +1268,39 @@ async def update_log_level(
         )
 
 
+@router.post("/settings/webhook")
+async def update_webhook_settings(
+    webhook_data: WebhookSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    更新 Webhook 和 API Key 设置
+    """
+    try:
+        from app.services.settings import settings_service
+
+        logger.info(f"管理员更新 Webhook/API 配置: url={webhook_data.webhook_url}, threshold={webhook_data.low_stock_threshold}")
+
+        settings = {
+            "webhook_url": webhook_data.webhook_url.strip(),
+            "low_stock_threshold": str(webhook_data.low_stock_threshold),
+            "api_key": webhook_data.api_key.strip()
+        }
+
+        success = await settings_service.update_settings(db, settings)
+
+        if success:
+            return JSONResponse(content={"success": True, "message": "配置已保存"})
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "保存失败"}
+            )
+
+    except Exception as e:
+        logger.error(f"更新配置失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"更新失败: {str(e)}"}
+        )

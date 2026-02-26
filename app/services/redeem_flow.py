@@ -14,6 +14,7 @@ from app.services.warranty import WarrantyService
 from app.services.team import TeamService
 from app.services.chatgpt import ChatGPTService
 from app.services.encryption import encryption_service
+from app.services.notification import notification_service
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -339,6 +340,11 @@ class RedeemFlowService:
                         db_session.add(redemption_record)
                     
                     logger.info(f"兑换成功: {email} 加入 Team {team_id_final}")
+
+                    # 检查库存并发送通知 (异步不阻塞)
+                    import asyncio
+                    asyncio.create_task(notification_service.check_and_notify_low_stock(db_session))
+
                     return {
                         "success": True,
                         "message": f"成功加入 Team: {final_team_name}",
