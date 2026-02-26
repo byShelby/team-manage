@@ -4,7 +4,7 @@
 
 ## 1. 库存预警 Webhook 通知
 
-当系统内可用的兑换码（`unused` 状态）数量低于或等于管理员设置的阈值时，系统会向配置的 Webhook URL 发送 POST 请求。
+当系统内所有活跃 Team 的总剩余车位（`max_members - current_members`）数量低于或等于管理员设置的阈值时，系统会向配置的 Webhook URL 发送 POST 请求。
 
 ### 请求信息
 - **方法**: `POST`
@@ -14,9 +14,9 @@
 ```json
 {
     "event": "low_stock",
-    "current_stock": 5,
+    "current_seats": 5,
     "threshold": 10,
-    "message": "库存不足预警：当前可用兑换码数量为 5，已低于阈值 10，请及时补货。"
+    "message": "库存不足预警：系统总可用车位仅剩 5，已低于预警阈值 10，请及时补货导入新账号。"
 }
 ```
 

@@ -98,14 +98,14 @@
             <label for="webhookUrl">Webhook URL</label>
             <input type="text" id="webhookUrl" name="webhook_url" value="{{ webhook_url or '' }}"
                 placeholder="https://your-api.com/webhook" class="form-control">
-            <p class="form-help">当库存(未使用兑换码)低于阈值时,系统将向此URL发送POST请求</p>
+            <p class="form-help">当系统总剩余车位低于阈值时,系统将向此URL发送POST请求</p>
         </div>
 
         <div class="form-group">
-            <label for="lowStockThreshold">库存预警阈值</label>
+            <label for="lowStockThreshold">车位预警阈值</label>
             <input type="number" id="lowStockThreshold" name="low_stock_threshold"
                 value="{{ low_stock_threshold or '10' }}" min="0" class="form-control">
-            <p class="form-help">当前可用兑换码数量低于或等于此数值时触发预警</p>
+            <p class="form-help">全系统所有活跃 Team 的总剩余车位低于或等于此数值时触发补货通知</p>
         </div>
 
         <div class="form-group">

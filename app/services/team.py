@@ -1881,6 +1881,22 @@ class TeamService:
                 "error": f"删除 Team 失败: {str(e)}"
             }
 
+    async def get_total_available_seats(
+        self,
+        db_session: AsyncSession
+    ) -> int:
+        """
+        获取所有活跃 Team 的总剩余车位数
+        """
+        try:
+            # 统计所有状态为 active 的 Team 的剩余位置
+            stmt = select(func.sum(Team.max_members - Team.current_members)).where(Team.status == "active")
+            result = await db_session.execute(stmt)
+            return result.scalar() or 0
+        except Exception as e:
+            logger.error(f"获取总可用车位数失败: {e}")
+            return 0
+
 
 # 创建全局 Team 服务实例
 team_service = TeamService()

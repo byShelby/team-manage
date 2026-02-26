@@ -16,23 +16,22 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 
 async def test_webhook():
     async with AsyncSessionLocal() as db:
-        # 1. 设置 Webhook URL (可以先去 https://webhook.site 拿一个地址)
-        # 这里只是模拟，我们通过日志观察是否发送
+        # 1. 设置 Webhook URL
         test_url = "https://webhook.site/placeholder"
         await settings_service.update_settings(db, {
             "webhook_url": test_url,
             "low_stock_threshold": "100" # 设高一点确保触发
         })
         
-        print(f"Checking stock level and sending webhook to {test_url}...")
+        print(f"Checking stock level (seats & codes) and sending webhook to {test_url}...")
         
-        # 2. 手动触发检查
-        result = await notification_service.check_and_notify_low_stock(db)
-        
-        if result:
-            print("Webhook check triggered notification successfully (check logs).")
-        else:
-            print("Webhook notification was not sent (maybe stock is higher than threshold or error occurred).")
+    # 2. 手动触发检查 (不需要传 db_session 了，它内部会创建)
+    result = await notification_service.check_and_notify_low_stock()
+    
+    if result:
+        print("Webhook check triggered notification successfully (check logs).")
+    else:
+        print("Webhook notification was not sent (maybe stock is higher than threshold or error occurred).")
 
 if __name__ == "__main__":
     asyncio.run(test_webhook())

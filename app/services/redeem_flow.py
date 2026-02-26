@@ -343,7 +343,7 @@ class RedeemFlowService:
 
                     # 检查库存并发送通知 (异步不阻塞)
                     import asyncio
-                    asyncio.create_task(notification_service.check_and_notify_low_stock(db_session))
+                    asyncio.create_task(notification_service.check_and_notify_low_stock())
 
                     return {
                         "success": True,
