@@ -318,7 +318,8 @@ class RedeemFlowService:
                     return {"success": False, "error": "Team 账号 Token 已失效且无法刷新"}
 
                 invite_result = await self.chatgpt_service.send_invite(
-                    access_token, final_team_account_id, email, db_session
+                    access_token, final_team_account_id, email, db_session,
+                    identifier=target_team.email
                 )
 
                 # --- 阶段 3: 最终化 ---

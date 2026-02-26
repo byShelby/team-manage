@@ -74,12 +74,18 @@ class ChatGPTService:
         """
         发送 HTTP 请求 (使用持久化隔离会话，提高 CF 通过率并防止污染)
         """
-        # 尝试从 Token 自动提取 Email 作为标识符，确保身份绝对隔离
-        if identifier == "default" and "Authorization" in headers:
-            token = headers["Authorization"].replace("Bearer ", "")
-            email = self.jwt_parser.extract_email(token)
-            if email:
-                identifier = email
+        # 尝试从 Header 或 Token 自动提取标识符，确保身份绝对隔离
+        if identifier == "default":
+            # 优先从账号 ID 识别，这对 Team 邀请等操作最重要
+            acc_id = headers.get("chatgpt-account-id")
+            if acc_id:
+                identifier = f"acc_{acc_id}"
+            # 其次从 Token 解析邮箱
+            elif "Authorization" in headers:
+                token = headers["Authorization"].replace("Bearer ", "")
+                email = self.jwt_parser.extract_email(token)
+                if email:
+                    identifier = email
 
         session = await self._get_session(db_session, identifier)
         
@@ -135,6 +141,10 @@ class ChatGPTService:
                             error_code = error_info.get("code") if isinstance(error_info, dict) else error_data.get("code")
                     except Exception:
                         pass
+                    
+                    if error_code == "token_invalidated" or "token_invalidated" in error_msg.lower():
+                        logger.warning(f"检测到 Token 失效，清理会话缓存: {identifier}")
+                        await self.clear_session(identifier)
                     
                     logger.warning(f"客户端错误 {status_code}: {error_msg}")
                     return {"success": False, "status_code": status_code, "error": error_msg, "error_code": error_code}
