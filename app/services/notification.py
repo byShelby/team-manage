@@ -29,6 +29,8 @@ class NotificationService:
                     return False
 
                 threshold_str = await settings_service.get_setting(db_session, "low_stock_threshold", "10")
+                api_key = await settings_service.get_setting(db_session, "api_key")
+
                 try:
                     threshold = int(threshold_str)
                 except (ValueError, TypeError):
@@ -42,7 +44,7 @@ class NotificationService:
                 # 仅根据可用车位触发补货
                 if available_seats <= threshold:
                     logger.info(f"检测到车位不足，触发补货预警! Webhook URL: {webhook_url}")
-                    return await self.send_webhook_notification(webhook_url, available_seats, threshold)
+                    return await self.send_webhook_notification(webhook_url, available_seats, threshold, api_key)
                 
                 return False
 
@@ -50,7 +52,7 @@ class NotificationService:
                 logger.error(f"检查库存并通知过程发生错误: {e}")
                 return False
 
-    async def send_webhook_notification(self, url: str, available_seats: int, threshold: int) -> bool:
+    async def send_webhook_notification(self, url: str, available_seats: int, threshold: int, api_key: Optional[str] = None) -> bool:
         """
         发送 Webhook 通知
         """
@@ -62,8 +64,12 @@ class NotificationService:
                 "message": f"库存不足预警：系统总可用车位仅剩 {available_seats}，已低于预警阈值 {threshold}，请及时补货导入新账号。"
             }
             
+            headers = {}
+            if api_key:
+                headers["X-API-Key"] = api_key
+                
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(url, json=payload)
+                response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 logger.info(f"Webhook 通知发送成功: {url}")
                 return True
