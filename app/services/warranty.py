@@ -170,20 +170,39 @@ class WarrantyService:
             can_reuse = False
 
             for record, code_obj, team in records_data:
+                # 预先提取所有可能用到的字段，防止 sync_team_info (含 commit) 导致对象 expire 后的访问报错
+                rec_email = record.email
+                rec_redeemed_at = record.redeemed_at
+                obj_code = code_obj.code
+                obj_has_warranty = code_obj.has_warranty
+                obj_warranty_expires_at = code_obj.warranty_expires_at
+                obj_status = code_obj.status
+                obj_used_at = code_obj.used_at
+                obj_warranty_days = code_obj.warranty_days
+                t_id = team.id
+                t_name = team.team_name
+                t_email = team.email
+                t_expires_at = team.expires_at
+
                 # 同步 Team 状态
                 if team.status != "banned":
-                    logger.info(f"质保查询: 正在实时测试 Team {team.id} ({team.team_name}) 的状态")
-                    await self.team_service.sync_team_info(team.id, db_session)
-                    # 同步后 team 对象的属性会自动更新
+                    logger.info(f"质保查询: 正在实时测试 Team {t_id} ({t_name}) 的状态")
+                    await self.team_service.sync_team_info(t_id, db_session)
+                    # 同步后 team 对象的属性会自动更新，如有 commit 则其他对象也可能 expire
+                    # 为了安全，后续逻辑尽量使用上面提取的局部变量或重新从对象读取（取决于 expire_on_commit 配置）
+                
+                # 重新校验状态（同步后可能已变）
+                t_status = team.status
+                t_last_sync = team.last_sync
 
                 # 动态计算/提取质保信息
-                expiry_date = code_obj.warranty_expires_at
+                expiry_date = obj_warranty_expires_at
                 
                 # 如果是质保码且已使用，但到期时间为空，尝试动态计算
-                if code_obj.has_warranty and not expiry_date:
-                    start_time = code_obj.used_at or record.redeemed_at # 优先取首次使用时间
+                if obj_has_warranty and not expiry_date:
+                    start_time = obj_used_at or rec_redeemed_at # 优先取首次使用时间
                     if start_time:
-                        days = code_obj.warranty_days or 30
+                        days = obj_warranty_days or 30
                         expiry_date = start_time + timedelta(days=days)
 
                 is_valid = True
@@ -196,13 +215,13 @@ class WarrantyService:
                     # 既没日期也没记录，通常是非质保码
                     is_valid = False
 
-                if code_obj.has_warranty:
+                if obj_has_warranty:
                     has_any_warranty = True
                     # 以最近的一个质保码作为主要质保状态参考
                     if primary_code is None:
                         primary_warranty_valid = is_valid
                         primary_expiry = expiry_date
-                        primary_code = code_obj.code
+                        primary_code = obj_code
 
                 # 提取用户在该 Team 的实时成员状态
                 user_mem_status = "unknown"
@@ -220,26 +239,26 @@ class WarrantyService:
                         logger.error(f"查询用户成员状态失败: {e}")
 
                 # 记录封号 Team
-                if team.status == "banned":
+                if t_status == "banned":
                     banned_teams_info.append({
-                        "team_id": team.id,
-                        "team_name": team.team_name,
-                        "email": team.email,
-                        "banned_at": team.last_sync.isoformat() if team.last_sync else None
+                        "team_id": t_id,
+                        "team_name": t_name,
+                        "email": t_email,
+                        "banned_at": t_last_sync.isoformat() if t_last_sync else None
                     })
 
                 final_records.append({
-                    "code": code_obj.code,
-                    "has_warranty": code_obj.has_warranty,
+                    "code": obj_code,
+                    "has_warranty": obj_has_warranty,
                     "warranty_valid": is_valid,
                     "warranty_expires_at": expiry_date.isoformat() if expiry_date else None,
-                    "status": code_obj.status,
-                    "used_at": record.redeemed_at.isoformat() if record.redeemed_at else None,
-                    "team_id": team.id,
-                    "team_name": team.team_name,
-                    "team_status": team.status,
-                    "team_expires_at": team.expires_at.isoformat() if team.expires_at else None,
-                    "email": record.email,
+                    "status": obj_status,
+                    "used_at": rec_redeemed_at.isoformat() if rec_redeemed_at else None,
+                    "team_id": t_id,
+                    "team_name": t_name,
+                    "team_status": t_status,
+                    "team_expires_at": t_expires_at.isoformat() if t_expires_at else None,
+                    "email": rec_email,
                     "user_membership_status": user_mem_status
                 })
 

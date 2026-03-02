@@ -334,6 +334,9 @@ class RedeemFlowService:
                         continue
                     return {"success": False, "error": "所选 Team 已失效"}
 
+                # 提取重要字段，防止后续 expired 后访问报错
+                target_team_email = target_team.email
+
                 # 确保 Access Token 有效 (过期则尝试使用 RT/ST 刷新)
                 access_token = await self.team_service.ensure_access_token(target_team, db_session)
                 if not access_token:
@@ -345,7 +348,7 @@ class RedeemFlowService:
                     return {"success": False, "error": "Team 账号 Token 已失效且无法刷新"}
 
                 # 网络请求后，由于 ensure_access_token 内部可能触发了同步并 commit 了子事务，
-                # 某些驱动下会导致当前外部 Context Manager 的事务状态同步异常。
+                # 必须重置事务状态以确保后续操作（如撤回邀请）能正常开启新事务。
                 if db_session.in_transaction():
                     await db_session.rollback()
 
@@ -363,7 +366,7 @@ class RedeemFlowService:
 
                 invite_result = await self.chatgpt_service.send_invite(
                     access_token, final_team_account_id, email, db_session,
-                    identifier=target_team.email
+                    identifier=target_team_email
                 )
                 
                 # 网络请求后重置事务状态，确保进入 Phase 3 时 session 是干净的
