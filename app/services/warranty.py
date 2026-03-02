@@ -323,22 +323,15 @@ class WarrantyService:
                 if team:
                     is_expired = team.expires_at and team.expires_at < get_now()
                     if team.status in ["active", "full"] and not is_expired:
-                        # 如果是同一个邮箱，提示已在有效 Team 中
-                        if record.email == email:
-                            return {
-                                "success": True,
-                                "can_reuse": False,
-                                "reason": f"您已在有效 Team 中 ({team.team_name or team.id})，不可重复兑换",
-                                "error": None
-                            }
-                        else:
-                            # 如果是不同邮箱，提示已被占用
+                        # 如果是不同邮箱，提示已被占用
+                        if record.email != email:
                             return {
                                 "success": True,
                                 "can_reuse": False,
                                 "reason": "该兑换码当前已被其他账号绑定且正在使用中。如需更换，请确保原账号已下车或原 Team 已失效。",
                                 "error": None
                             }
+                        # 如果是同一个邮箱，先不返回，在后面的第 5 步中会调用 API 深度检查成员状态
 
             # 5. 查找当前用户使用该兑换码的记录 (用于后续逻辑判断)
             records = [r for r in all_records_for_code if r.email == email]
