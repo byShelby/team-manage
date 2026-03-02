@@ -198,16 +198,40 @@ class RedeemFlowService:
             team_id_final = None
             revoke_team_id = None
             try:
-                # --- 阶段 1: 验证并占位 (短事务) ---
-                async with db_session.begin():
-                    # 1. 验证兑换码 (在事务内验证确保原子性)
-                    validate_result = await self.redemption_service.validate_code(code, db_session)
-                    if not validate_result["success"]:
-                        return {"success": False, "error": validate_result["error"]}
-                    if not validate_result["valid"]:
-                        return {"success": False, "error": validate_result["reason"]}
+                # --- 阶段 1: 验证并占位 ---
+                
+                # 1. 基础验证（不带锁）
+                validate_result = await self.redemption_service.validate_code(code, db_session)
+                if not validate_result["success"]:
+                    return {"success": False, "error": validate_result["error"]}
+                if not validate_result["valid"]:
+                    return {"success": False, "error": validate_result["reason"]}
 
-                    # 再次验证并锁定 (带锁锁定，防止并发)
+                # 2. 深度质保验证（涉及 API 调用，必须在锁外执行以防事务冲突）
+                # 先初步获取码信息判断是否需要深度验证
+                stmt = select(RedemptionCode).where(RedemptionCode.code == code)
+                res = await db_session.execute(stmt)
+                temp_code_obj = res.scalar_one_or_none()
+                
+                if not temp_code_obj:
+                    return {"success": False, "error": "兑换码记录丢失"}
+                
+                is_warranty_code = temp_code_obj.has_warranty
+                is_first_use = temp_code_obj.status == "unused"
+                
+                if is_warranty_code and not is_first_use:
+                    warranty_check = await self.warranty_service.validate_warranty_reuse(
+                        db_session, code, email
+                    )
+                    if not warranty_check["success"] or not warranty_check["can_reuse"]:
+                        return {"success": False, "error": warranty_check.get("reason", "兑换码质保验证未通过")}
+                    revoke_team_id = warranty_check.get("revoke_team_id")
+                elif not is_warranty_code and not is_first_use:
+                    return {"success": False, "error": "兑换码已被占用"}
+
+                # 3. 进入核心占位事务（短事务，带锁）
+                async with db_session.begin_nested(): # 使用子事务，更安全
+                    # 重新验证并锁定 (带锁锁定，防止并发)
                     stmt = select(RedemptionCode).where(RedemptionCode.code == code).with_for_update()
                     result = await db_session.execute(stmt)
                     redemption_code = result.scalar_one_or_none()
@@ -240,38 +264,23 @@ class RedeemFlowService:
                     if not team:
                         if current_target_team_id is None and attempt < max_retries - 1:
                             logger.warning(f"选择的 Team {team_id_final} 消失了, 尝试下一次循环")
-                            continue
+                            raise Exception("retry_loop") # 触发 retry 逻辑
                         return {"success": False, "error": f"Team {team_id_final} 不存在"}
                     
                     if team.current_members >= team.max_members:
                         if current_target_team_id is None and attempt < max_retries - 1:
                             logger.warning(f"选择的 Team {team_id_final} 已满, 尝试下一次循环")
-                            continue 
+                            raise Exception("retry_loop")
                         return {"success": False, "error": "Team 已满，请选择其他 Team"}
                     
                     if team.status != "active":
                         if current_target_team_id is None and attempt < max_retries - 1:
                             logger.warning(f"选择的 Team {team_id_final} 状态异常 ({team.status}), 尝试下一次循环")
-                            continue
+                            raise Exception("retry_loop")
                         return {"success": False, "error": f"Team 状态异常: {team.status}"}
 
-                    # 特殊处理质保码逻辑
-                    is_warranty_code = redemption_code.has_warranty
-                    is_first_use = redemption_code.status == "unused"
-                    
-                    if not is_first_use:
-                        # 如果不是首次使用，检查是否为质保码且可重复使用
-                        if is_warranty_code:
-                            warranty_check = await self.warranty_service.validate_warranty_reuse(
-                                db_session, code, email
-                            )
-                            if not warranty_check["success"] or not warranty_check["can_reuse"]:
-                                return {"success": False, "error": warranty_check.get("reason", "兑换码质保验证未通过")}
-                            
-                            # 获取需要撤销的原邀请 Team ID (如果有)
-                            revoke_team_id = warranty_check.get("revoke_team_id")
-                        else:
-                            return {"success": False, "error": "兑换码已被占用"}
+                    # 获取最终参数
+                    final_is_warranty = is_warranty_code
 
                     # 4. 更新状态执行占位
                     if is_warranty_code:
@@ -309,9 +318,9 @@ class RedeemFlowService:
                     db_session.add(redemption_record)
                     await db_session.flush()
                     current_record_id = redemption_record.id
-                    
-                    # 事务 commit
-                
+
+                # 提交 Phase 1 的修改
+                await db_session.commit()
                 # --- 阶段 2: 网络请求 ---
                 # 获取该 Team 的最新数据以确保 Token 也是最新的 (可能被其他进程同步过)
                 stmt = select(Team).where(Team.id == team_id_final)
