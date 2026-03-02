@@ -335,6 +335,11 @@ class RedeemFlowService:
                         continue
                     return {"success": False, "error": "Team 账号 Token 已失效且无法刷新"}
 
+                # 网络请求后，由于 ensure_access_token 内部可能触发了同步并 commit 了子事务，
+                # 某些驱动下会导致当前外部 Context Manager 的事务状态同步异常。
+                if db_session.in_transaction():
+                    await db_session.rollback()
+
                 # 自助质保: 如果有待加入邀请需要撤回，先撤回
                 if revoke_team_id:
                     logger.info(f"自助质保: 正在撤销原 Team {revoke_team_id} 中的待加入邀请")
@@ -351,13 +356,15 @@ class RedeemFlowService:
                     access_token, final_team_account_id, email, db_session,
                     identifier=target_team.email
                 )
+                
+                # 网络请求后重置事务状态，确保进入 Phase 3 时 session 是干净的
+                if db_session.in_transaction():
+                    await db_session.rollback()
 
                 # --- 阶段 3: 最终化 ---
                 if invite_result["success"]:
                     # 由于记录已在 Phase 1 写入，此处只需处理后续逻辑
-                    if db_session.in_transaction():
-                        await db_session.rollback()
-                        
+                    # 我们已经在上面通过 rollback 确保了 session 状态
                     logger.info(f"兑换成功: {email} 加入 Team {team_id_final}")
 
                     # 检查库存并发送通知 (异步不阻塞)
@@ -430,10 +437,11 @@ class RedeemFlowService:
     ):
         """回退兑换占位"""
         try:
-            # 确保会话干净，防止在异常处理路径中再次触发事务冲突
+            # 彻底确保会话处于干净状态
             if db_session.in_transaction():
                 await db_session.rollback()
-                
+            
+            # 使用独立事务进行回滚操作
             async with db_session.begin():
                 # 0. 删除已创建的记录 (如果存在)
                 if record_id:
