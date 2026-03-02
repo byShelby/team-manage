@@ -383,6 +383,7 @@ class WarrantyService:
                                         "success": True,
                                         "can_reuse": True,
                                         "reason": f"未在 Team ({team.team_name or team.id}) 中找到您的成员记录，可能之前的邀请发送失败，可重新兑换",
+                                        "revoke_team_id": team.id, # 即使没找到也要尝试撤销，以清理本地数据库中可能存在的“幽灵席位”
                                         "error": None
                                     }
                         except Exception as e:

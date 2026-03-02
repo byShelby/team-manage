@@ -183,6 +183,7 @@ class RedeemFlowService:
         max_retries = 3
         current_target_team_id = team_id
         last_error = "未知错误"
+        current_record_id = None # 用于回滚时定位具体记录
 
         for attempt in range(max_retries):
             # 彻底确保会话处于干净状态，防止 "A transaction is already begun" 错误
@@ -297,6 +298,18 @@ class RedeemFlowService:
                     final_access_token_encrypted = team.access_token_encrypted
                     final_is_warranty = is_warranty_code
                     
+                    # 5. 创建兑换记录 (移入 Phase 1 事务，防止并发首兑竞态漏洞)
+                    redemption_record = RedemptionRecord(
+                        email=email,
+                        code=code,
+                        team_id=team_id_final,
+                        account_id=final_team_account_id,
+                        is_warranty_redemption=final_is_warranty
+                    )
+                    db_session.add(redemption_record)
+                    await db_session.flush()
+                    current_record_id = redemption_record.id
+                    
                     # 事务 commit
                 
                 # --- 阶段 2: 网络请求 ---
@@ -341,20 +354,10 @@ class RedeemFlowService:
 
                 # --- 阶段 3: 最终化 ---
                 if invite_result["success"]:
-                    # 阶段 2 的网络请求中可能涉及查询设置(代理等)，会隐式开启事务
+                    # 由于记录已在 Phase 1 写入，此处只需处理后续逻辑
                     if db_session.in_transaction():
                         await db_session.rollback()
                         
-                    async with db_session.begin():
-                        redemption_record = RedemptionRecord(
-                            email=email,
-                            code=code,
-                            team_id=team_id_final,
-                            account_id=final_team_account_id,
-                            is_warranty_redemption=final_is_warranty
-                        )
-                        db_session.add(redemption_record)
-                    
                     logger.info(f"兑换成功: {email} 加入 Team {team_id_final}")
 
                     # 检查库存并发送通知 (异步不阻塞)
@@ -374,7 +377,8 @@ class RedeemFlowService:
                     }
                 else:
                     logger.warning(f"API 邀请失败 (尝试 {attempt + 1}): {invite_result['error']}")
-                    await self._rollback_redemption(db_session, code, team_id_final)
+                    await self._rollback_redemption(db_session, code, team_id_final, current_record_id)
+                    current_record_id = None # 清理 ID，防止重复删除
                     
                     error_msg = invite_result.get("error", "未知错误")
                     
@@ -409,7 +413,8 @@ class RedeemFlowService:
                 logger.error(f"兑换尝试异常 (第 {attempt + 1} 次): {e}")
                 if team_id_final:
                     try:
-                        await self._rollback_redemption(db_session, code, team_id_final)
+                        await self._rollback_redemption(db_session, code, team_id_final, current_record_id)
+                        current_record_id = None
                     except:
                         pass
                 if attempt < max_retries - 1:
@@ -420,7 +425,8 @@ class RedeemFlowService:
         self,
         db_session: AsyncSession,
         code: str,
-        team_id: int
+        team_id: int,
+        record_id: Optional[int] = None
     ):
         """回退兑换占位"""
         try:
@@ -429,7 +435,12 @@ class RedeemFlowService:
                 await db_session.rollback()
                 
             async with db_session.begin():
-                # 回退兑换码状态
+                # 0. 删除已创建的记录 (如果存在)
+                if record_id:
+                    stmt = delete(RedemptionRecord).where(RedemptionRecord.id == record_id)
+                    await db_session.execute(stmt)
+
+                # 1. 回退兑换码状态
                 stmt = select(RedemptionCode).where(RedemptionCode.code == code).with_for_update()
                 result = await db_session.execute(stmt)
                 redemption_code = result.scalar_one_or_none()
