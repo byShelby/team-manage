@@ -227,10 +227,12 @@ class WarrantyService:
                     "email": record.email
                 })
 
+            reuse_reason = None
             # 3. 判断是否可以重复使用 (只要有有效的质保码且有被封的 Team)
             if has_any_warranty and primary_warranty_valid:
                 if len(banned_teams_info) > 0:
                     can_reuse = True
+                    reuse_reason = "监测到您有被封号的记录，质保服务已激活。"
                 else:
                     # 如果没有被封的 Team，检查是否有“待加入”的邀请
                     # 只要最近一个码是有效的质保码，我们尝试去验证一下是否可更名/撤销重发
@@ -239,6 +241,7 @@ class WarrantyService:
                     )
                     if reuse_check["success"] and reuse_check["can_reuse"]:
                         can_reuse = True
+                        reuse_reason = reuse_check.get("reason")
 
             return {
                 "success": True,
@@ -247,6 +250,7 @@ class WarrantyService:
                 "warranty_expires_at": primary_expiry.isoformat() if primary_expiry else None,
                 "banned_teams": banned_teams_info,
                 "can_reuse": can_reuse,
+                "reuse_reason": reuse_reason,
                 "original_code": primary_code,
                 "records": final_records,
                 "message": "查询成功"

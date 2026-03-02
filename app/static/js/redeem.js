@@ -453,10 +453,10 @@ function showWarrantyResult(data) {
             <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
                 <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--success); margin-bottom: 0.8rem;">
                     <i data-lucide="check-circle" style="width: 20px; height: 20px;"></i> 
-                    <span style="font-weight: 600;">发现失效 Team，质保可触发</span>
+                    <span style="font-weight: 600;">质保服务已就绪</span>
                 </div>
                 <p style="margin: 0 0 1.2rem 0; color: var(--text-secondary); font-size: 0.95rem;">
-                    监测到您所在的 Team 已失效。由于您的质保码仍在有效期内，您可以立即复制兑换码进行重兑。
+                    ${escapeHtml(data.reuse_reason || '检测到您的记录符合质保要求。由于您的质保码仍在有效期内，您可以立即复制兑换码进行重兑。')}
                 </p>
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <input type="text" value="${escapeHtml(data.original_code)}" readonly 
