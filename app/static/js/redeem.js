@@ -423,7 +423,7 @@ function showWarrantyResult(data) {
                                              <span>${escapeHtml(record.team_name || '未知 Team')}</span>
                                              <span>${teamStatusBadge}</span>
                                              ${userMembershipBadge}
-                                             ${(record.has_warranty && record.warranty_valid && (record.team_status === 'banned' || record.user_membership_status === 'invited' || record.user_membership_status === 'not_found')) ? `
+                                             ${(record.has_warranty && record.warranty_valid && (record.team_status === 'banned' || record.user_membership_status === 'not_found')) ? `
                                              <button onclick="oneClickReplace('${escapeHtml(record.code)}', '${escapeHtml(record.email || currentEmail)}')" class="btn btn-xs btn-primary" style="padding: 2px 8px; font-size: 0.75rem; height: auto; min-height: 0;">
                                                  一键换车
                                              </button>

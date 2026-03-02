@@ -404,9 +404,8 @@ class WarrantyService:
                                 if user_in_team and user_in_team.get("status") == "invited":
                                     return {
                                         "success": True,
-                                        "can_reuse": True,
-                                        "reason": f"您目前在 Team ({team.team_name or team.id}) 中处于待加入状态，可撤销并重新兑换",
-                                        "revoke_team_id": team.id,
+                                        "can_reuse": False,
+                                        "reason": f"您目前在 Team ({team.team_name or team.id}) 中处于待加入状态，请先在邮箱中接受邀请并加入。若无法加入，请联系管理员。",
                                         "error": None
                                     }
                                 elif not user_in_team:
