@@ -195,6 +195,7 @@ class RedeemFlowService:
             
             logger.info(f"正在尝试兑换 (第 {attempt + 1}/{max_retries} 次尝试): email={email}, code={code}")
             team_id_final = None
+            revoke_team_id = None
             try:
                 # --- 阶段 1: 验证并占位 (短事务) ---
                 async with db_session.begin():
@@ -265,6 +266,9 @@ class RedeemFlowService:
                             )
                             if not warranty_check["success"] or not warranty_check["can_reuse"]:
                                 return {"success": False, "error": warranty_check.get("reason", "兑换码质保验证未通过")}
+                            
+                            # 获取需要撤销的原邀请 Team ID (如果有)
+                            revoke_team_id = warranty_check.get("revoke_team_id")
                         else:
                             return {"success": False, "error": "兑换码已被占用"}
 
@@ -317,6 +321,18 @@ class RedeemFlowService:
                         current_target_team_id = None
                         continue
                     return {"success": False, "error": "Team 账号 Token 已失效且无法刷新"}
+
+                # 自助质保: 如果有待加入邀请需要撤回，先撤回
+                if revoke_team_id:
+                    logger.info(f"自助质保: 正在撤销原 Team {revoke_team_id} 中的待加入邀请")
+                    # 调用 team_service 撤回邀请，它会处理 Token 刷新并更新数据库计数
+                    revoke_res = await self.team_service.revoke_team_invite(revoke_team_id, email, db_session)
+                    if not revoke_res["success"]:
+                        logger.warning(f"自助质保: 撤销原邀请失败 (可能已失效): {revoke_res.get('error')}")
+                        # 除非是账号封禁等严重错误，否则继续执行（可能邀请本身已经在 ChatGPT 端被清理了）
+                        if any(kw in str(revoke_res.get("error", "")).lower() for kw in ["token", "auth", "deactivated", "banned"]):
+                            await self._rollback_redemption(db_session, code, team_id_final)
+                            return {"success": False, "error": f"撤回原邀请失败 (账号异常): {revoke_res.get('error')}"}
 
                 invite_result = await self.chatgpt_service.send_invite(
                     access_token, final_team_account_id, email, db_session,

@@ -228,10 +228,17 @@ class WarrantyService:
                 })
 
             # 3. 判断是否可以重复使用 (只要有有效的质保码且有被封的 Team)
-            if has_any_warranty and primary_warranty_valid and len(banned_teams_info) > 0:
-                # 进一步验证 (使用现有的 validate_warranty_reuse 逻辑)
-                # 这里为了简单直接复用逻辑判断
-                can_reuse = True
+            if has_any_warranty and primary_warranty_valid:
+                if len(banned_teams_info) > 0:
+                    can_reuse = True
+                else:
+                    # 如果没有被封的 Team，检查是否有“待加入”的邀请
+                    # 只要最近一个码是有效的质保码，我们尝试去验证一下是否可更名/撤销重发
+                    reuse_check = await self.validate_warranty_reuse(
+                        db_session, primary_code, records_data[0][0].email
+                    )
+                    if reuse_check["success"] and reuse_check["can_reuse"]:
+                        can_reuse = True
 
             return {
                 "success": True,
@@ -356,6 +363,31 @@ class WarrantyService:
                     # 如果有任何一个关联 Team 还是 active/full 状态，且未过期
                     is_expired = team.expires_at and team.expires_at < get_now()
                     if team.status in ["active", "full"] and not is_expired:
+                        # 检查是否为“待加入”邀请。如果是待加入邀请，即便 Team 正常，也允许撤回重新兑换
+                        try:
+                            members_res = await self.team_service.get_team_members(team.id, db_session)
+                            if members_res["success"]:
+                                all_members = members_res.get("members", [])
+                                user_in_team = next((m for m in all_members if m["email"].lower() == email.lower()), None)
+                                if user_in_team and user_in_team.get("status") == "invited":
+                                    return {
+                                        "success": True,
+                                        "can_reuse": True,
+                                        "reason": f"您目前在 Team ({team.team_name or team.id}) 中处于待加入状态，可撤销并重新兑换",
+                                        "revoke_team_id": team.id,
+                                        "error": None
+                                    }
+                                elif not user_in_team:
+                                    # 如果在 active Team 中未找到该成员且没有待加入邀请，说明之前的邀请可能由于 API 失败并未成功，允许重新兑换
+                                    return {
+                                        "success": True,
+                                        "can_reuse": True,
+                                        "reason": f"未在 Team ({team.team_name or team.id}) 中找到您的成员记录，可能之前的邀请发送失败，可重新兑换",
+                                        "error": None
+                                    }
+                        except Exception as e:
+                            logger.error(f"检查成员状态失败: {e}")
+
                         return {
                             "success": True,
                             "can_reuse": False,
