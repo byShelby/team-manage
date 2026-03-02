@@ -204,6 +204,21 @@ class WarrantyService:
                         primary_expiry = expiry_date
                         primary_code = code_obj.code
 
+                # 提取用户在该 Team 的实时成员状态
+                user_mem_status = "unknown"
+                if team.status in ["active", "full"]:
+                    try:
+                        members_res = await self.team_service.get_team_members(team.id, db_session)
+                        if members_res["success"]:
+                            all_members = members_res.get("members", [])
+                            user_in_team = next((m for m in all_members if m["email"].lower() == record.email.lower()), None)
+                            if user_in_team:
+                                user_mem_status = user_in_team.get("status") # joined 或 invited
+                            else:
+                                user_mem_status = "not_found"
+                    except Exception as e:
+                        logger.error(f"查询用户成员状态失败: {e}")
+
                 # 记录封号 Team
                 if team.status == "banned":
                     banned_teams_info.append({
@@ -224,7 +239,8 @@ class WarrantyService:
                     "team_name": team.team_name,
                     "team_status": team.status,
                     "team_expires_at": team.expires_at.isoformat() if team.expires_at else None,
-                    "email": record.email
+                    "email": record.email,
+                    "user_membership_status": user_mem_status
                 })
 
             reuse_reason = None

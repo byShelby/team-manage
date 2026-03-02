@@ -405,6 +405,11 @@ function showWarrantyResult(data) {
             else if (record.team_status === 'expired') teamStatusBadge = '<span style="color: var(--text-muted); font-size: 0.8rem;">● 过期</span>';
             else teamStatusBadge = `<span style="color: var(--text-muted); font-size: 0.8rem;">● ${record.team_status || '未知'}</span>`;
 
+            let userMembershipBadge = '';
+            if (record.user_membership_status === 'joined') userMembershipBadge = '<span class="badge" style="background: rgba(34, 197, 94, 0.2); color: var(--success); border: none; font-size: 0.75rem;">已加入</span>';
+            else if (record.user_membership_status === 'invited') userMembershipBadge = '<span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: none; font-size: 0.75rem;">待加入</span>';
+            else if (record.user_membership_status === 'not_found') userMembershipBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: var(--danger); border: none; font-size: 0.75rem;">未加入</span>';
+
             return `
                             <div class="record-card" style="padding: 1rem; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px;">
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.8rem;">
@@ -417,7 +422,8 @@ function showWarrantyResult(data) {
                                          <div style="font-weight: 500; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                                              <span>${escapeHtml(record.team_name || '未知 Team')}</span>
                                              <span>${teamStatusBadge}</span>
-                                             ${(record.has_warranty && record.warranty_valid && (record.team_status === 'banned' || (data.can_reuse && record.code === data.original_code))) ? `
+                                             ${userMembershipBadge}
+                                             ${(record.has_warranty && record.warranty_valid && (record.team_status === 'banned' || record.user_membership_status === 'invited' || record.user_membership_status === 'not_found')) ? `
                                              <button onclick="oneClickReplace('${escapeHtml(record.code)}', '${escapeHtml(record.email || currentEmail)}')" class="btn btn-xs btn-primary" style="padding: 2px 8px; font-size: 0.75rem; height: auto; min-height: 0;">
                                                  一键换车
                                              </button>
